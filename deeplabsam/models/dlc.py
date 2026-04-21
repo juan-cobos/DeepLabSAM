@@ -1,14 +1,13 @@
+from pathlib import Path
+
+import cv2
 import numpy as np
 import onnxruntime as ort
-from pathlib import Path
-import cv2
-
 
 DTYPE = np.float32
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=DTYPE)
 _STD = np.array([0.229, 0.224, 0.225], dtype=DTYPE)
 _MEAN_255 = tuple((_MEAN * 255).tolist())
-_INV_STD = (1.0 / _STD).reshape(1, 3, 1, 1)
 _MEAN_CHW = _MEAN.reshape(3, 1, 1)
 _INV_STD_CHW = (1.0 / _STD).reshape(3, 1, 1)
 
@@ -22,20 +21,22 @@ class TVMInference:
         self.cache_dir = Path(cache_dir)
         model_path = self.cache_dir / "pose_hrnet_w32.onnx"
         if not model_path.exists():
+            self.cache_dir.mkdir(exist_ok=True)
             self._download()
 
         providers = [
-            p for p in ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            p
+            for p in ["CUDAExecutionProvider", "CPUExecutionProvider"]
             if p in ort.get_available_providers()
         ]
         self.session = ort.InferenceSession(str(model_path), providers=providers)
 
     def _download(self):
-        import urllib.request, zipfile
+        import urllib.request
+        import zipfile
+
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        url = (
-            "https://huggingface.co/JCobosAlvarez/DeepLabCut-TopViewMouse-onnx/resolve/main/hrnet_w32.zip"
-        )
+        url = "https://huggingface.co/JCobosAlvarez/DeepLabCut-TopViewMouse-onnx/resolve/main/hrnet_w32.zip"
         urllib.request.urlretrieve(url, "hrnet_w32.zip")
         with zipfile.ZipFile("hrnet_w32.zip") as z:
             z.extractall(self.cache_dir)
@@ -64,7 +65,7 @@ class TVMInference:
             blob = cv2.dnn.blobFromImage(
                 crop, 1 / 255.0, (new_w, new_h), _MEAN_255, swapRB=True
             )
-            batch[i, :, y_off:y_off + new_h, x_off:x_off + new_w] = blob[0]
+            batch[i, :, y_off : y_off + new_h, x_off : x_off + new_w] = blob[0]
             transforms[i] = (x1, y1, scale, x_off, y_off)
             valid_idxs.append(i)
         batch *= _INV_STD_CHW

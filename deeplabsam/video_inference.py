@@ -1,10 +1,11 @@
-# from trackers import OCSORTTracker
+import argparse
+
 import cv2
 import numpy as np
 import supervision as sv
-import argparse
 from models.dlc import TVMInference
 from models.sam3 import SAM3Inference
+from trackers import OCSORTTracker
 
 KEYPOINT_THRESHOLD = 0.3
 DETECT_EVERY_N = 1

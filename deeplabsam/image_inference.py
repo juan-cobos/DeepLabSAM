@@ -1,8 +1,9 @@
+import argparse
+from pathlib import Path
+
 import cv2
 import numpy as np
 import supervision as sv
-import argparse
-from pathlib import Path
 from models.dlc import TVMInference
 from models.sam3 import SAM3Inference
 
@@ -13,14 +14,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", help="input image path")
     parser.add_argument("--text", default="mice", help="SAM3 text prompt")
-    parser.add_argument("--output", default=None, help="output image path (default: <input>_annotated.<ext>)")
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="output image path (default: <input>_annotated.<ext>)",
+    )
     args = parser.parse_args()
 
     in_path = Path(args.image)
     frame = cv2.imread(str(in_path))
     if frame is None:
         raise RuntimeError(f"Cannot read: {in_path}")
-    out_path = Path(args.output) if args.output else in_path.with_stem(in_path.stem + "_annotated")
+    out_path = (
+        Path(args.output)
+        if args.output
+        else in_path.with_stem(in_path.stem + "_annotated")
+    )
 
     sam_model = SAM3Inference()
     pose_model = TVMInference()

@@ -1,13 +1,16 @@
-from samexporter.sam3_onnx import SegmentAnything3ONNX
-import numpy as np
 from pathlib import Path
-import cv2
+
+import numpy as np
+from samexporter.sam3_onnx import SegmentAnything3ONNX
+
 
 class SAM3Inference:
     def __init__(self, cache_dir="sam3"):
 
+        # TODO: improve cache_dir detection and downloading
         self.cache_dir = Path(cache_dir)
         if not self.cache_dir.exists():
+            self.cache_dir.mkdir(exist_ok=True)
             self._download()
 
         encoder_model = self.cache_dir / "sam3_image_encoder.onnx"
@@ -21,13 +24,15 @@ class SAM3Inference:
         )
 
     def _download(self):
-        import urllib.request, zipfile
+        import urllib.request
+        import zipfile
+
         url = "https://huggingface.co/vietanhdev/segment-anything-3-onnx-models/resolve/main/sam3_vit_h.zip"
         urllib.request.urlretrieve(url, "sam3_vit_h.zip")
         with zipfile.ZipFile("sam3_vit_h.zip") as z:
             z.extractall(self.cache_dir)
 
-    def predict(self, image, text):
+    def predict(self, image, text, confidence_threshold=0.5):
         """Run text-prompted segmentation.
 
         Returns:
@@ -38,7 +43,17 @@ class SAM3Inference:
 
         embedding = self.model.encode(image, text_prompt=text)
         # SAM3 returns (N, 1, H, W); drop the channel axis at the source.
-        masks = self.model.predict_masks(embedding, text, confidence_threshold=0.5)[:, 0]
+
+        # Prompt example
+        prompt = {"type": "point", "data": text, "label": 0}
+        # prompt = [{"type": "rectangle", "data": [425, 600, 700, 875]}]
+
+        """
+        prompt:
+            List of mark dicts, each with keys ``"type"`` (``"rectangle"``
+            or ``"point"``) and ``"data"``.
+        """
+        masks = self.model.predict_masks(embedding, prompt, confidence_threshold)[:, 0]
 
         # Derive xyxy boxes from mask extents (vectorized per-axis reductions).
         rows_any = masks.any(axis=2)  # (N, H)
@@ -52,3 +67,8 @@ class SAM3Inference:
                 boxes[i] = [cs[0], rs[0], cs[-1], rs[-1]]
 
         return boxes, masks
+
+
+if __name__ == "__main__":
+    model = SAM3Inference()
+    print("Works!")
