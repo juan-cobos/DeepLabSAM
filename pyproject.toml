@@ -1,7 +1,7 @@
 [project]
 name = "deeplabsam"
 version = "0.1.0"
-description = "Pose estimation with pixel-accurate instance masks"
+description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
