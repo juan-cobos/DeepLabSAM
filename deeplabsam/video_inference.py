@@ -8,55 +8,7 @@ from trackers import OCSORTTracker
 from deeplabsam import DeepLabSAM
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--video", default=None, help="video path (omit for webcam)")
-    parser.add_argument("--text", default="mice", help="OSAM text prompt")
-    parser.add_argument(
-        "--model", default="sam3:latest", help="osam model identifier"
-    )
-    parser.add_argument(
-        "--box",
-        type=int,
-        nargs=4,
-        default=[607, 450, 770, 726],
-        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
-        help="box prompt as xyxy (defaults to example ROI)",
-    )
-    parser.add_argument(
-        "--iou-threshold", type=float, default=0.5, help="osam Prompt iou_threshold"
-    )
-    parser.add_argument(
-        "--score-threshold",
-        type=float,
-        default=0.1,
-        help="osam Prompt score_threshold",
-    )
-    parser.add_argument(
-        "--max-annotations",
-        type=int,
-        default=100,
-        help="osam Prompt max_annotations",
-    )
-    parser.add_argument(
-        "--keypoint-threshold",
-        type=float,
-        default=0.3,
-        help="hide keypoints below this confidence",
-    )
-    parser.add_argument(
-        "--output",
-        default=None,
-        help="output video path (omit to skip writing)",
-    )
-    parser.add_argument(
-        "--json",
-        default=None,
-        help="annotations JSON path (default: <video>_annotations.json, "
-        "or annotations.json for webcam)",
-    )
-    args = parser.parse_args()
-
+def run(args):
     cap = cv2.VideoCapture(0 if args.video is None else args.video)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open: {args.video or 'webcam'}")
@@ -80,11 +32,8 @@ def main():
         else None
     )
 
-    pipeline = DeepLabSAM(
-        sam_model=args.model, keypoint_threshold=args.keypoint_threshold
-    )
+    pipeline = DeepLabSAM(sam_model=args.model, keypoint_threshold=args.keypoint_threshold)
     tracker = OCSORTTracker(frame_rate=frame_rate)
-
 
     box_annot = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX)
     label_annot = sv.LabelAnnotator(color_lookup=sv.ColorLookup.INDEX)
@@ -145,6 +94,28 @@ def main():
     print(f"Saved: {json_path}")
     if args.output:
         print(f"Saved: {args.output}")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video", nargs="?", default=None, help="video path (omit for webcam)")
+    parser.add_argument("--text", default="mice", help="OSAM text prompt")
+    parser.add_argument("--model", default="sam3:latest", help="osam model identifier")
+    parser.add_argument(
+        "--box",
+        type=int,
+        nargs=4,
+        default=None,
+        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+        help="optional box prompt as xyxy",
+    )
+    parser.add_argument("--iou-threshold", type=float, default=0.5)
+    parser.add_argument("--score-threshold", type=float, default=0.1)
+    parser.add_argument("--max-annotations", type=int, default=100)
+    parser.add_argument("--keypoint-threshold", type=float, default=0.3)
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--json", default=None)
+    run(parser.parse_args())
 
 
 if __name__ == "__main__":
