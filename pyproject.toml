@@ -10,6 +10,7 @@ dependencies = [
     "opencv-python>=4.13.0.92",
     "osam>=0.4.0",
     "supervision>=0.27.0.post2",
+    "tqdm>=4.0",
     "trackers>=2.3.0",
 ]
 

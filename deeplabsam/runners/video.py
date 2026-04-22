@@ -3,6 +3,7 @@ from pathlib import Path
 
 import cv2
 import supervision as sv
+from tqdm import tqdm
 from trackers import OCSORTTracker
 
 from deeplabsam import DeepLabSAM
@@ -22,6 +23,7 @@ def run(args):
         json_path = Path("annotations.json")
 
     frame_rate = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     writer = (
@@ -45,7 +47,7 @@ def run(args):
     vertex_annot = sv.VertexAnnotator(color=sv.Color.RED, radius=3)
 
     frame_idx = 0
-    with sv.JSONSink(str(json_path)) as sink:
+    with sv.JSONSink(str(json_path)) as sink, tqdm(total=total_frames, unit="frame") as pbar:
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -91,6 +93,7 @@ def run(args):
                     },
                 )
             frame_idx += 1
+            pbar.update()
 
     cap.release()
     if writer is not None:
