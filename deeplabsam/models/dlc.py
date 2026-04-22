@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -12,17 +13,37 @@ _STD = np.array([0.229, 0.224, 0.225], dtype=DTYPE)
 _PAD_CHW = ((-_MEAN) / _STD).reshape(3, 1, 1)
 
 
-class TVMInference:
-    "Top View Mouse Inference"
+@dataclass(frozen=True)
+class _ModelConfig:
+    url: str
+    zip_name: str
+    model_file: str
+    input_size: int
 
-    INPUT_SIZE = 256
-    MODEL_URL = "https://huggingface.co/JCobosAlvarez/DeepLabCut-TopViewMouse-onnx/resolve/main/hrnet_w32.zip"
 
-    def __init__(self, cache_dir="dlc"):
+_REGISTRY: dict[str, _ModelConfig] = {
+    "topviewmouse": _ModelConfig(
+        url="https://huggingface.co/JCobosAlvarez/DeepLabCut-TopViewMouse-onnx/resolve/main/hrnet_w32.zip",
+        zip_name="hrnet_w32.zip",
+        model_file="pose_hrnet_w32.onnx",
+        input_size=256,
+    ),
+}
+
+
+class DLCPose:
+    """DeepLabCut pose estimator backed by an ONNX model from the registry."""
+
+    def __init__(self, model="topviewmouse", cache_dir="dlc"):
+        if model not in _REGISTRY:
+            raise ValueError(f"Unknown model {model!r}. Available: {list(_REGISTRY)}")
+        cfg = _REGISTRY[model]
+        self.cfg = cfg
+        self.INPUT_SIZE = cfg.input_size
         self.cache_dir = Path(cache_dir)
-        model_path = self.cache_dir / "pose_hrnet_w32.onnx"
+        model_path = self.cache_dir / cfg.model_file
         if not model_path.exists():
-            self._download()
+            self._download(cfg)
 
         providers = [
             p
@@ -31,13 +52,13 @@ class TVMInference:
         ]
         self.session = ort.InferenceSession(str(model_path), providers=providers)
 
-    def _download(self):
+    def _download(self, cfg):
         import urllib.request
         import zipfile
 
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        zip_path = self.cache_dir / "hrnet_w32.zip"
-        urllib.request.urlretrieve(self.MODEL_URL, zip_path)
+        zip_path = self.cache_dir / cfg.zip_name
+        urllib.request.urlretrieve(cfg.url, zip_path)
         with zipfile.ZipFile(zip_path) as z:
             z.extractall(self.cache_dir)
         zip_path.unlink()
@@ -106,7 +127,7 @@ if __name__ == "__main__":
     if image is None:
         raise RuntimeError(f"Cannot read: {image_path}")
 
-    model = TVMInference()
+    model = DLCPose()
     boxes = np.array([[607, 450, 770, 726]], dtype=np.float32)
     kpts = model.predict(image, boxes)
     print(f"Keypoints: {kpts.shape}, max conf: {kpts[0, :, 2].max():.3f}")

@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
-from deeplabsam.models.dlc import TVMInference
+from deeplabsam.models.dlc import DLCPose
 
 
 @pytest.fixture(scope="module")
 def model():
-    return TVMInference()
+    return DLCPose()
 
 
 @pytest.mark.slow

@@ -1,14 +1,14 @@
 import numpy as np
 import supervision as sv
 
-from deeplabsam.models.dlc import TVMInference
+from deeplabsam.models.dlc import DLCPose
 from deeplabsam.models.sam import OSAM
 
 
 class DeepLabSAM:
     """Text/box-prompted segmentation + pose estimation.
 
-    Composes OSAM (detection + masks) with TVMInference (keypoints). Returns
+    Composes OSAM (detection + masks) with DLCPose (keypoints). Returns
     supervision primitives so downstream trackers and annotators plug in
     without any adaptation.
     """
@@ -20,7 +20,7 @@ class DeepLabSAM:
         keypoint_threshold=0.3,
     ):
         self.sam = OSAM(model=sam_model)
-        self.pose = TVMInference(cache_dir=pose_cache_dir)
+        self.pose = DLCPose(cache_dir=pose_cache_dir)
         self.keypoint_threshold = keypoint_threshold
 
     def detect(
