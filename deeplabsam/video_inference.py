@@ -1,16 +1,11 @@
 import argparse
+from pathlib import Path
 
 import cv2
-import numpy as np
 import supervision as sv
-from models.dlc import TVMInference
-from models.sam import OSAM
 from trackers import OCSORTTracker
 
-KEYPOINT_THRESHOLD = 0.3
-DETECT_EVERY_N = 1
-JSON_PATH = "annotations.json"
-OUTPUT_VIDEO = "output.mp4"
+from deeplabsam import DeepLabSAM
 
 
 def main():
@@ -28,87 +23,128 @@ def main():
         metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
         help="box prompt as xyxy (defaults to example ROI)",
     )
-    parser.add_argument("--output", default=OUTPUT_VIDEO, help="output video path")
+    parser.add_argument(
+        "--iou-threshold", type=float, default=0.5, help="osam Prompt iou_threshold"
+    )
+    parser.add_argument(
+        "--score-threshold",
+        type=float,
+        default=0.1,
+        help="osam Prompt score_threshold",
+    )
+    parser.add_argument(
+        "--max-annotations",
+        type=int,
+        default=100,
+        help="osam Prompt max_annotations",
+    )
+    parser.add_argument(
+        "--keypoint-threshold",
+        type=float,
+        default=0.3,
+        help="hide keypoints below this confidence",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="output video path (omit to skip writing)",
+    )
+    parser.add_argument(
+        "--json",
+        default=None,
+        help="annotations JSON path (default: <video>_annotations.json, "
+        "or annotations.json for webcam)",
+    )
     args = parser.parse_args()
 
     cap = cv2.VideoCapture(0 if args.video is None else args.video)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open: {args.video or 'webcam'}")
 
+    if args.json is not None:
+        json_path = Path(args.json)
+    elif args.video is not None:
+        in_path = Path(args.video)
+        json_path = in_path.with_stem(in_path.stem + "_annotations").with_suffix(".json")
+    else:
+        json_path = Path("annotations.json")
+
     frame_rate = cap.get(cv2.CAP_PROP_FPS) or 30.0
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    writer = cv2.VideoWriter(
-        args.output, cv2.VideoWriter_fourcc(*"mp4v"), frame_rate, (W, H)
+    writer = (
+        cv2.VideoWriter(
+            args.output, cv2.VideoWriter_fourcc(*"mp4v"), frame_rate, (W, H)
+        )
+        if args.output
+        else None
     )
 
+    pipeline = DeepLabSAM(
+        sam_model=args.model, keypoint_threshold=args.keypoint_threshold
+    )
     tracker = OCSORTTracker(frame_rate=frame_rate)
-    sam_model = OSAM(model=args.model)
-    pose_model = TVMInference()
 
-    box_annot = sv.BoxAnnotator()
-    label_annot = sv.LabelAnnotator()
-    mask_annot = sv.MaskAnnotator()
+
+    box_annot = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX)
+    label_annot = sv.LabelAnnotator(color_lookup=sv.ColorLookup.INDEX)
+    mask_annot = sv.MaskAnnotator(color_lookup=sv.ColorLookup.INDEX)
     vertex_annot = sv.VertexAnnotator(color=sv.Color.RED, radius=3)
 
     frame_idx = 0
-    with sv.JSONSink(JSON_PATH) as sink:
+    with sv.JSONSink(str(json_path)) as sink:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            boxes, masks = sam_model.predict(frame_rgb, text=args.text, box=args.box)
-
-            if len(boxes):
-                detections = sv.Detections(
-                    xyxy=boxes,
-                    confidence=np.ones(len(boxes), dtype=np.float32),
-                    mask=masks,
-                )
-                tracked = tracker.update(detections)
-                tracker_ids = tracked.tracker_id
-            else:
-                tracked = sv.Detections.empty()
-                tracker_ids = np.zeros(0, dtype=int)
-
-            # TVMInference uses cv2.dnn.blobFromImage(swapRB=True) → expects BGR.
-            kpts = pose_model.predict(frame, tracked.xyxy)
+            detections = pipeline.detect(
+                frame_rgb,
+                text=args.text,
+                boxes=args.box,
+                iou_threshold=args.iou_threshold,
+                score_threshold=args.score_threshold,
+                max_annotations=args.max_annotations,
+            )
+            tracked = (
+                tracker.update(detections) if len(detections) else sv.Detections.empty()
+            )
+            keypoints = pipeline.estimate_pose(frame, tracked)
 
             annotated = frame.copy()
             if len(tracked):
                 annotated = mask_annot.annotate(annotated, tracked)
                 annotated = box_annot.annotate(annotated, tracked)
-                labels = [f"#{tid}" for tid in tracker_ids]
+                labels = [f"#{tid}" for tid in tracked.tracker_id]
                 annotated = label_annot.annotate(annotated, tracked, labels=labels)
+            if keypoints.xy.size:
+                annotated = vertex_annot.annotate(annotated, keypoints)
 
-            if kpts.size:
-                # Zero out low-confidence keypoints so the annotator skips them.
-                xy = kpts[:, :, :2].copy()
-                conf = kpts[:, :, 2]
-                xy[conf < KEYPOINT_THRESHOLD] = 0
-                annotated = vertex_annot.annotate(
-                    annotated, sv.KeyPoints(xy=xy, confidence=conf)
-                )
-
-            writer.write(annotated)
+            if writer is not None:
+                writer.write(annotated)
 
             for i in range(len(tracked)):
                 sink.append(
                     sv.Detections(
                         xyxy=tracked.xyxy[i : i + 1],
-                        tracker_id=tracker_ids[i : i + 1],
+                        tracker_id=tracked.tracker_id[i : i + 1],
                     ),
                     custom_data={
                         "frame_idx": frame_idx,
-                        "keypoints": kpts[i].tolist() if i < len(kpts) else [],
+                        "keypoints": keypoints.xy[i].tolist()
+                        if i < len(keypoints.xy)
+                        else [],
                     },
                 )
             frame_idx += 1
 
     cap.release()
-    writer.release()
+    if writer is not None:
+        writer.release()
+    print(f"Saved: {json_path}")
+    if args.output:
+        print(f"Saved: {args.output}")
 
 
 if __name__ == "__main__":

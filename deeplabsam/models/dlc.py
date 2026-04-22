@@ -7,21 +7,21 @@ import onnxruntime as ort
 DTYPE = np.float32
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=DTYPE)
 _STD = np.array([0.229, 0.224, 0.225], dtype=DTYPE)
-_MEAN_255 = tuple((_MEAN * 255).tolist())
-_MEAN_CHW = _MEAN.reshape(3, 1, 1)
-_INV_STD_CHW = (1.0 / _STD).reshape(3, 1, 1)
+# Normalized value of a black pixel — used for letterbox padding so the model
+# sees the same padding distribution it was trained with.
+_PAD_CHW = ((-_MEAN) / _STD).reshape(3, 1, 1)
 
 
 class TVMInference:
     "Top View Mouse Inference"
 
     INPUT_SIZE = 256
+    MODEL_URL = "https://huggingface.co/JCobosAlvarez/DeepLabCut-TopViewMouse-onnx/resolve/main/hrnet_w32.zip"
 
     def __init__(self, cache_dir="dlc"):
         self.cache_dir = Path(cache_dir)
         model_path = self.cache_dir / "pose_hrnet_w32.onnx"
         if not model_path.exists():
-            self.cache_dir.mkdir(exist_ok=True)
             self._download()
 
         providers = [
@@ -36,40 +36,26 @@ class TVMInference:
         import zipfile
 
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        url = "https://huggingface.co/JCobosAlvarez/DeepLabCut-TopViewMouse-onnx/resolve/main/hrnet_w32.zip"
-        urllib.request.urlretrieve(url, "hrnet_w32.zip")
-        with zipfile.ZipFile("hrnet_w32.zip") as z:
+        zip_path = self.cache_dir / "hrnet_w32.zip"
+        urllib.request.urlretrieve(self.MODEL_URL, zip_path)
+        with zipfile.ZipFile(zip_path) as z:
             z.extractall(self.cache_dir)
+        zip_path.unlink()
 
-    def _preprocess(self, image_bgr, boxes):
-        """Letterbox each box-crop into (N, 3, S, S); return batch + per-box transform."""
+    def _letterbox(self, crop):
+        """Resize + center-pad a crop to (3, S, S) normalized CHW float32."""
         size = self.INPUT_SIZE
-        N = len(boxes)
-        H_img, W_img = image_bgr.shape[:2]
-        # Pad with normalized-black so crop padding matches the mean-subtracted region after *= _INV_STD_CHW.
-        batch = np.empty((N, 3, size, size), dtype=DTYPE)
-        batch[:] = -_MEAN_CHW
-        transforms = np.zeros((N, 5), dtype=DTYPE)  # x1, y1, scale, pad_x, pad_y
-        valid_idxs = []
-        for i, box in enumerate(boxes):
-            x1, y1, x2, y2 = box.astype(int)
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(W_img, x2), min(H_img, y2)
-            if x2 <= x1 or y2 <= y1:
-                continue
-            crop = image_bgr[y1:y2, x1:x2]
-            ch, cw = crop.shape[:2]
-            scale = min(size / cw, size / ch)
-            new_w, new_h = int(cw * scale), int(ch * scale)
-            x_off, y_off = (size - new_w) // 2, (size - new_h) // 2
-            blob = cv2.dnn.blobFromImage(
-                crop, 1 / 255.0, (new_w, new_h), _MEAN_255, swapRB=True
-            )
-            batch[i, :, y_off : y_off + new_h, x_off : x_off + new_w] = blob[0]
-            transforms[i] = (x1, y1, scale, x_off, y_off)
-            valid_idxs.append(i)
-        batch *= _INV_STD_CHW
-        return batch, transforms, valid_idxs
+        ch, cw = crop.shape[:2]
+        scale = min(size / cw, size / ch)
+        new_w, new_h = int(cw * scale), int(ch * scale)
+        pad_x, pad_y = (size - new_w) // 2, (size - new_h) // 2
+
+        rgb = cv2.cvtColor(cv2.resize(crop, (new_w, new_h)), cv2.COLOR_BGR2RGB)
+        chw = ((rgb.astype(DTYPE) / 255.0 - _MEAN) / _STD).transpose(2, 0, 1)
+
+        out = np.broadcast_to(_PAD_CHW, (3, size, size)).copy()
+        out[:, pad_y : pad_y + new_h, pad_x : pad_x + new_w] = chw
+        return out, scale, pad_x, pad_y
 
     def predict(self, image, boxes):
         """Pose estimation on each box.
@@ -83,17 +69,44 @@ class TVMInference:
             Invalid/out-of-frame boxes yield zero rows.
         """
         boxes = np.asarray(boxes, dtype=DTYPE).reshape(-1, 4)
-        if len(boxes) == 0:
+        N = len(boxes)
+        if N == 0:
             return np.zeros((0, 0, 3), dtype=DTYPE)
 
-        batch, transforms, valid_idxs = self._preprocess(image, boxes)
-        if not valid_idxs:
-            return np.zeros((len(boxes), 0, 3), dtype=DTYPE)
+        H, W = image.shape[:2]
+        crops, tfs, valid_idxs = [], [], []
+        for i, box in enumerate(boxes):
+            x1, y1, x2, y2 = box.astype(int)
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(W, x2), min(H, y2)
+            if x2 <= x1 or y2 <= y1:
+                continue
+            chw, scale, pad_x, pad_y = self._letterbox(image[y1:y2, x1:x2])
+            crops.append(chw)
+            tfs.append((x1, y1, scale, pad_x, pad_y))
+            valid_idxs.append(i)
 
-        poses = self.session.run(["poses"], {"image": batch[valid_idxs]})[0]
-        tf = transforms[valid_idxs]
+        if not valid_idxs:
+            return np.zeros((N, 0, 3), dtype=DTYPE)
+
+        batch = np.stack(crops)
+        poses = self.session.run(["poses"], {"image": batch})[0]
+
+        tf = np.array(tfs, dtype=DTYPE)  # (V, 5): x1, y1, scale, pad_x, pad_y
         xy = (poses[:, :, :2] - tf[:, None, 3:]) / tf[:, None, 2:3] + tf[:, None, :2]
 
-        out = np.zeros((len(boxes), poses.shape[1], 3), dtype=DTYPE)
+        out = np.zeros((N, poses.shape[1], 3), dtype=DTYPE)
         out[valid_idxs] = np.concatenate([xy, poses[:, :, 2:]], axis=2)
         return out
+
+
+if __name__ == "__main__":
+    image_path = "examples/images/example.png"
+    image = cv2.imread(image_path)
+    if image is None:
+        raise RuntimeError(f"Cannot read: {image_path}")
+
+    model = TVMInference()
+    boxes = np.array([[607, 450, 770, 726]], dtype=np.float32)
+    kpts = model.predict(image, boxes)
+    print(f"Keypoints: {kpts.shape}, max conf: {kpts[0, :, 2].max():.3f}")
