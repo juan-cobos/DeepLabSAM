@@ -3,7 +3,8 @@ import argparse
 
 def _add_common_args(parser):
     parser.add_argument("--text", default="mice", help="OSAM text prompt")
-    parser.add_argument("--model", default="sam3:latest", help="osam model identifier")
+    parser.add_argument("--sam-model", default="sam3:latest", help="osam model identifier")
+    parser.add_argument("--pose-model", default="topviewmouse", help="DLC pose model")
     parser.add_argument(
         "--box",
         type=int,
@@ -45,8 +46,8 @@ def main():
     args = parser.parse_args()
 
     if args.command == "image":
-        from deeplabsam.image_inference import run
+        from deeplabsam.runners.image import run
         run(args)
     else:
-        from deeplabsam.video_inference import run
+        from deeplabsam.runners.video import run
         run(args)

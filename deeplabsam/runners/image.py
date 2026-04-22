@@ -18,7 +18,11 @@ def run(args):
         else in_path.with_stem(in_path.stem + "_annotated")
     )
 
-    pipeline = DeepLabSAM(sam_model=args.model, keypoint_threshold=args.keypoint_threshold)
+    pipeline = DeepLabSAM(
+        sam_model=args.sam_model,
+        pose_model=args.pose_model,
+        keypoint_threshold=args.keypoint_threshold,
+    )
 
     box_annot = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX)
     mask_annot = sv.MaskAnnotator(color_lookup=sv.ColorLookup.INDEX)
@@ -48,15 +52,11 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("image", help="input image path")
-    parser.add_argument("--text", default="mice", help="OSAM text prompt")
-    parser.add_argument("--model", default="sam3:latest", help="osam model identifier")
+    parser.add_argument("--text", default="mice")
+    parser.add_argument("--sam-model", default="sam3:latest")
+    parser.add_argument("--pose-model", default="topviewmouse")
     parser.add_argument(
-        "--box",
-        type=int,
-        nargs=4,
-        default=None,
-        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
-        help="optional box prompt as xyxy",
+        "--box", type=int, nargs=4, default=None, metavar=("XMIN", "YMIN", "XMAX", "YMAX")
     )
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument("--score-threshold", type=float, default=0.1)

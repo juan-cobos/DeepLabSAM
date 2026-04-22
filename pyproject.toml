@@ -15,8 +15,8 @@ dependencies = [
 
 [project.scripts]
 deeplabsam = "deeplabsam.cli:main"
-deeplabsam-image = "deeplabsam.image_inference:main"
-deeplabsam-video = "deeplabsam.video_inference:main"
+deeplabsam-image = "deeplabsam.runners.image:main"
+deeplabsam-video = "deeplabsam.runners.video:main"
 
 [build-system]
 requires = ["hatchling"]
