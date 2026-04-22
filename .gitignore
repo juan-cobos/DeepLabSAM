@@ -10,5 +10,5 @@ wheels/
 .venv
 
 dlc/
-sam3/
 *.zip
+scripts/

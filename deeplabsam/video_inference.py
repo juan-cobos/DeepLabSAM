@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import supervision as sv
 from models.dlc import TVMInference
-from models.sam3 import SAM3Inference
+from models.sam import OSAM
 from trackers import OCSORTTracker
 
 KEYPOINT_THRESHOLD = 0.3
@@ -16,7 +16,18 @@ OUTPUT_VIDEO = "output.mp4"
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", default=None, help="video path (omit for webcam)")
-    parser.add_argument("--text", default="mice", help="SAM3 text prompt")
+    parser.add_argument("--text", default="mice", help="OSAM text prompt")
+    parser.add_argument(
+        "--model", default="sam3:latest", help="osam model identifier"
+    )
+    parser.add_argument(
+        "--box",
+        type=int,
+        nargs=4,
+        default=[607, 450, 770, 726],
+        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+        help="box prompt as xyxy (defaults to example ROI)",
+    )
     parser.add_argument("--output", default=OUTPUT_VIDEO, help="output video path")
     args = parser.parse_args()
 
@@ -32,7 +43,7 @@ def main():
     )
 
     tracker = OCSORTTracker(frame_rate=frame_rate)
-    sam_model = SAM3Inference()
+    sam_model = OSAM(model=args.model)
     pose_model = TVMInference()
 
     box_annot = sv.BoxAnnotator()
@@ -48,7 +59,7 @@ def main():
                 break
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            boxes, masks = sam_model.predict(frame_rgb, text=args.text)
+            boxes, masks = sam_model.predict(frame_rgb, text=args.text, box=args.box)
 
             if len(boxes):
                 detections = sv.Detections(

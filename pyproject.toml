@@ -8,4 +8,7 @@ dependencies = [
     "numpy>=2.4.4",
     "onnxruntime>=1.24.4",
     "opencv-python>=4.13.0.92",
+    "osam>=0.4.0",
+    "supervision>=0.27.0.post2",
+    "trackers>=2.3.0",
 ]

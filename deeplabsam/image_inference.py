@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import supervision as sv
 from models.dlc import TVMInference
-from models.sam3 import SAM3Inference
+from models.sam import OSAM
 
 KEYPOINT_THRESHOLD = 0.3
 
@@ -13,7 +13,18 @@ KEYPOINT_THRESHOLD = 0.3
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", help="input image path")
-    parser.add_argument("--text", default="mice", help="SAM3 text prompt")
+    parser.add_argument("--text", default="mice", help="OSAM text prompt")
+    parser.add_argument(
+        "--model", default="sam3:latest", help="osam model identifier"
+    )
+    parser.add_argument(
+        "--box",
+        type=int,
+        nargs=4,
+        default=[607, 450, 770, 726],
+        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+        help="box prompt as xyxy (defaults to example ROI)",
+    )
     parser.add_argument(
         "--output",
         default=None,
@@ -31,15 +42,16 @@ def main():
         else in_path.with_stem(in_path.stem + "_annotated")
     )
 
-    sam_model = SAM3Inference()
+    sam_model = OSAM(model=args.model)
     pose_model = TVMInference()
 
-    box_annot = sv.BoxAnnotator()
-    mask_annot = sv.MaskAnnotator()
+    box_annot = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX)
+    mask_annot = sv.MaskAnnotator( color_lookup=sv.ColorLookup.INDEX )
     vertex_annot = sv.VertexAnnotator(color=sv.Color.RED, radius=3)
 
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    boxes, masks = sam_model.predict(frame_rgb, text=args.text)
+    boxes, masks = sam_model.predict(frame, text=args.text, box=args.box)
+    print("Masks", masks)
+    print("Boxes", boxes)
 
     # TVMInference uses cv2.dnn.blobFromImage(swapRB=True) → expects BGR.
     kpts = pose_model.predict(frame, boxes)

@@ -90,10 +90,10 @@ class TVMInference:
         if not valid_idxs:
             return np.zeros((len(boxes), 0, 3), dtype=DTYPE)
 
-        kpts = self.session.run(["kpts"], {"image": batch[valid_idxs]})[0]
+        poses = self.session.run(["poses"], {"image": batch[valid_idxs]})[0]
         tf = transforms[valid_idxs]
-        xy = (kpts[:, :, :2] - tf[:, None, 3:]) / tf[:, None, 2:3] + tf[:, None, :2]
+        xy = (poses[:, :, :2] - tf[:, None, 3:]) / tf[:, None, 2:3] + tf[:, None, :2]
 
-        out = np.zeros((len(boxes), kpts.shape[1], 3), dtype=DTYPE)
-        out[valid_idxs] = np.concatenate([xy, kpts[:, :, 2:]], axis=2)
+        out = np.zeros((len(boxes), poses.shape[1], 3), dtype=DTYPE)
+        out[valid_idxs] = np.concatenate([xy, poses[:, :, 2:]], axis=2)
         return out
