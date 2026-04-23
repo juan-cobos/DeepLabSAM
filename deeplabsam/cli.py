@@ -49,21 +49,13 @@ def main():
 
     if args.command == "list-models":
         from deeplabsam.models.dlc import _REGISTRY as _POSE
-        from osam._models import (
-            EfficientSam10m, EfficientSam30m,
-            Sam100m, Sam300m, Sam600m,
-            Sam2BasePlus, Sam2Large, Sam2Small, Sam2Tiny,
-            Sam3,
-            YoloWorldXL,
-        )
+        from osam.apis import registered_model_types
         print("Pose models:")
         for name in _POSE:
             print(f"  {name}")
         print("\nSAM models:")
-        for cls in (Sam3, Sam2Tiny, Sam2Small, Sam2BasePlus, Sam2Large,
-                    Sam100m, Sam300m, Sam600m,
-                    EfficientSam10m, EfficientSam30m, YoloWorldXL):
-            print(f"  {cls.name}")
+        for m in registered_model_types:
+            print(f"  {m.name}")
     elif args.command == "image":
         from deeplabsam.runners.image import run
         run(args)
