@@ -43,9 +43,14 @@ class DLCPose:
 
     def _download(self, url, dest):
         import urllib.request
+        from tqdm import tqdm
 
         dest.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(url, dest)
+        with tqdm(unit="B", unit_scale=True, unit_divisor=1024, miniters=1, desc=dest.name) as bar:
+            def _progress(count, block_size, total):
+                bar.total = total
+                bar.update(count * block_size - bar.n)
+            urllib.request.urlretrieve(url, dest, reporthook=_progress)
 
     def _letterbox(self, crop):
         """Resize + center-pad a crop to (3, S, S) normalized CHW float32."""
