@@ -197,6 +197,7 @@ dependencies = [
     { name = "opencv-python" },
     { name = "osam" },
     { name = "supervision" },
+    { name = "tqdm" },
     { name = "trackers" },
 ]
 
@@ -212,6 +213,7 @@ requires-dist = [
     { name = "opencv-python", specifier = ">=4.13.0.92" },
     { name = "osam", specifier = ">=0.4.0" },
     { name = "supervision", specifier = ">=0.27.0.post2" },
+    { name = "tqdm", specifier = ">=4.0" },
     { name = "trackers", specifier = ">=2.3.0" },
 ]
 

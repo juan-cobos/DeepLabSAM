@@ -36,6 +36,4 @@ def test_registry_contains_topviewmouse():
     from deeplabsam.models.dlc import _REGISTRY
 
     assert "topviewmouse" in _REGISTRY
-    cfg = _REGISTRY["topviewmouse"]
-    assert cfg.input_size == 256
-    assert cfg.model_file.endswith(".onnx")
+    assert _REGISTRY["topviewmouse"].endswith(".onnx")

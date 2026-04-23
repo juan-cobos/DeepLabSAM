@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -13,37 +12,27 @@ _STD = np.array([0.229, 0.224, 0.225], dtype=DTYPE)
 _PAD_CHW = ((-_MEAN) / _STD).reshape(3, 1, 1)
 
 
-@dataclass(frozen=True)
-class _ModelConfig:
-    url: str
-    zip_name: str
-    model_file: str
-    input_size: int
+HF_REPO = "https://huggingface.co/JCobosAlvarez/DeepLabCutModelZoo-onnx/resolve/main/"
 
-
-_REGISTRY: dict[str, _ModelConfig] = {
-    "topviewmouse": _ModelConfig(
-        url="https://huggingface.co/JCobosAlvarez/DeepLabCut-TopViewMouse-onnx/resolve/main/hrnet_w32.zip",
-        zip_name="hrnet_w32.zip",
-        model_file="pose_hrnet_w32.onnx",
-        input_size=256,
-    ),
+_REGISTRY: dict[str, str] = {
+    "topviewmouse": HF_REPO + "topviewmouse_pose_hrnet_w32.onnx",
+    "quadruped": HF_REPO + "quadruped_pose_hrnet_w32.onnx",
 }
 
 
 class DLCPose:
     """DeepLabCut pose estimator backed by an ONNX model from the registry."""
 
+    INPUT_SIZE = 256
+
     def __init__(self, model="topviewmouse", cache_dir="dlc"):
         if model not in _REGISTRY:
             raise ValueError(f"Unknown model {model!r}. Available: {list(_REGISTRY)}")
-        cfg = _REGISTRY[model]
-        self.cfg = cfg
-        self.INPUT_SIZE = cfg.input_size
+        url = _REGISTRY[model]
         self.cache_dir = Path(cache_dir)
-        model_path = self.cache_dir / cfg.model_file
+        model_path = self.cache_dir / url.rsplit("/", 1)[-1]
         if not model_path.exists():
-            self._download(cfg)
+            self._download(url, model_path)
 
         providers = [
             p
@@ -52,16 +41,11 @@ class DLCPose:
         ]
         self.session = ort.InferenceSession(str(model_path), providers=providers)
 
-    def _download(self, cfg):
+    def _download(self, url, dest):
         import urllib.request
-        import zipfile
 
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        zip_path = self.cache_dir / cfg.zip_name
-        urllib.request.urlretrieve(cfg.url, zip_path)
-        with zipfile.ZipFile(zip_path) as z:
-            z.extractall(self.cache_dir)
-        zip_path.unlink()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(url, dest)
 
     def _letterbox(self, crop):
         """Resize + center-pad a crop to (3, S, S) normalized CHW float32."""
@@ -122,12 +106,12 @@ class DLCPose:
 
 
 if __name__ == "__main__":
-    image_path = "examples/images/example.png"
+    image_path = "deeplabsam/examples/images/example.png"
     image = cv2.imread(image_path)
     if image is None:
         raise RuntimeError(f"Cannot read: {image_path}")
 
-    model = DLCPose()
+    model = DLCPose(model="quadruped")
     boxes = np.array([[607, 450, 770, 726]], dtype=np.float32)
     kpts = model.predict(image, boxes)
     print(f"Keypoints: {kpts.shape}, max conf: {kpts[0, :, 2].max():.3f}")
