@@ -1,4 +1,5 @@
 import numpy as np
+import onnxruntime as ort
 import pytest
 
 from deeplabsam.models.dlc import DLCPose, _REGISTRY
@@ -46,6 +47,20 @@ def test_inference_on_roi(model, example_image, example_box):
     assert (xy[:, 0] >= 0).all() and (xy[:, 0] <= W).all()
     assert (xy[:, 1] >= 0).all() and (xy[:, 1] <= H).all()
     assert conf.max() > 0.5
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    "CUDAExecutionProvider" not in ort.get_available_providers(),
+    reason="CUDA not available",
+)
+def test_gpu_provider(example_image, example_box):
+    model = DLCPose()
+    assert "CUDAExecutionProvider" in model.session.get_providers()
+    boxes = np.array([example_box], dtype=np.float32)
+    kpts = model.predict(example_image, boxes)
+    assert kpts.shape[0] == 1
+    assert kpts[0, :, 2].max() > 0.5
 
 
 @pytest.mark.slow
