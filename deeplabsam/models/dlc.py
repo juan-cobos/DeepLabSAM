@@ -25,11 +25,11 @@ class DLCPose:
 
     INPUT_SIZE = 256
 
-    def __init__(self, model="topviewmouse", cache_dir="dlc"):
+    def __init__(self, model="topviewmouse", cache_dir=None):
         if model not in _REGISTRY:
             raise ValueError(f"Unknown model {model!r}. Available: {list(_REGISTRY)}")
         url = _REGISTRY[model]
-        self.cache_dir = Path(cache_dir)
+        self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".cache" / "deeplabsam"
         model_path = self.cache_dir / url.rsplit("/", 1)[-1]
         if not model_path.exists():
             self._download(url, model_path)
