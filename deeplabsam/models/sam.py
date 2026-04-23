@@ -5,12 +5,15 @@ AVAILABLE_MODELS = tuple(t.name for t in osam.apis.registered_model_types)
 
 
 class OSAM:
-    def __init__(self, model="sam3:latest"):
+    def __init__(self, model="sam3:latest", device=None):
         if model not in AVAILABLE_MODELS:
             raise ValueError(
                 f"Unknown osam model {model!r}. "
                 f"Available: {', '.join(AVAILABLE_MODELS)}"
             )
+        import onnxruntime as ort
+        if device == "cuda" and "CUDAExecutionProvider" not in ort.get_available_providers():
+            raise RuntimeError("CUDA requested but CUDAExecutionProvider not available. Install onnxruntime-gpu.")
         self.model = model
 
     def predict(

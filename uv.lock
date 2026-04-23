@@ -2,6 +2,9 @@ version = 1
 revision = 3
 requires-python = ">=3.13"
 
+[manifest]
+overrides = [{ name = "onnxruntime-gpu", specifier = ">=1.24.4" }]
+
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
@@ -193,17 +196,12 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
-    { name = "onnxruntime" },
+    { name = "onnxruntime-gpu" },
     { name = "opencv-python" },
     { name = "osam" },
     { name = "supervision" },
     { name = "tqdm" },
     { name = "trackers" },
-]
-
-[package.optional-dependencies]
-gpu = [
-    { name = "onnxruntime-gpu" },
 ]
 
 [package.dev-dependencies]
@@ -214,15 +212,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=2.4.4" },
-    { name = "onnxruntime", specifier = ">=1.24.4" },
-    { name = "onnxruntime-gpu", marker = "extra == 'gpu'", specifier = ">=1.24.4" },
+    { name = "onnxruntime-gpu", specifier = ">=1.24.4" },
     { name = "opencv-python", specifier = ">=4.13.0.92" },
     { name = "osam", specifier = ">=0.4.0" },
     { name = "supervision", specifier = ">=0.27.0.post2" },
     { name = "tqdm", specifier = ">=4.0" },
     { name = "trackers", specifier = ">=2.3.0" },
 ]
-provides-extras = ["gpu"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]

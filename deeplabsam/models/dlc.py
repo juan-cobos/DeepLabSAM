@@ -25,31 +25,42 @@ class DLCPose:
 
     INPUT_SIZE = 256
 
-    def __init__(self, model="topviewmouse", cache_dir=None):
+    def __init__(self, model="topviewmouse", cache_dir=None, device=None):
         if model not in _REGISTRY:
             raise ValueError(f"Unknown model {model!r}. Available: {list(_REGISTRY)}")
         url = _REGISTRY[model]
-        self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".cache" / "deeplabsam"
+        self.cache_dir = (
+            Path(cache_dir) if cache_dir else Path.home() / ".cache" / "deeplabsam"
+        )
         model_path = self.cache_dir / url.rsplit("/", 1)[-1]
         if not model_path.exists():
             self._download(url, model_path)
 
-        providers = [
-            p
-            for p in ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            if p in ort.get_available_providers()
-        ]
+        available = ort.get_available_providers()
+        if device == "cuda":
+            if "CUDAExecutionProvider" not in available:
+                raise RuntimeError("CUDA requested but CUDAExecutionProvider not available. Install onnxruntime-gpu.")
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        elif device == "cpu":
+            providers = ["CPUExecutionProvider"]
+        else:
+            providers = [p for p in ["CUDAExecutionProvider", "CPUExecutionProvider"] if p in available]
         self.session = ort.InferenceSession(str(model_path), providers=providers)
 
     def _download(self, url, dest):
         import urllib.request
+
         from tqdm import tqdm
 
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with tqdm(unit="B", unit_scale=True, unit_divisor=1024, miniters=1, desc=dest.name) as bar:
+        with tqdm(
+            unit="B", unit_scale=True, unit_divisor=1024, miniters=1, desc=dest.name
+        ) as bar:
+
             def _progress(count, block_size, total):
                 bar.total = total
                 bar.update(count * block_size - bar.n)
+
             urllib.request.urlretrieve(url, dest, reporthook=_progress)
 
     def _letterbox(self, crop):

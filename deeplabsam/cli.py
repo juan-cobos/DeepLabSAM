@@ -22,6 +22,12 @@ def _add_common_args(parser):
         default=0.3,
         help="hide keypoints below this confidence",
     )
+    parser.add_argument(
+        "--device",
+        choices=["cpu", "cuda"],
+        default=None,
+        help="force inference device (default: auto)",
+    )
 
 
 def main():

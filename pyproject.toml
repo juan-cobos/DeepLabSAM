@@ -6,16 +6,13 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.4.4",
-    "onnxruntime>=1.24.4",
+    "onnxruntime-gpu>=1.24.4",
     "opencv-python>=4.13.0.92",
     "osam>=0.4.0",
     "supervision>=0.27.0.post2",
     "tqdm>=4.0",
     "trackers>=2.3.0",
 ]
-
-[project.optional-dependencies]
-gpu = ["onnxruntime-gpu>=1.24.4"]
 
 [project.scripts]
 deeplabsam = "deeplabsam.cli:main"
@@ -33,6 +30,9 @@ packages = ["deeplabsam"]
 dev = [
     "pytest>=8.0",
 ]
+
+[tool.uv]
+override-dependencies = ["onnxruntime-gpu>=1.24.4"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

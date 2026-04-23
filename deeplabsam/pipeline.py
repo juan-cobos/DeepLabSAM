@@ -18,9 +18,10 @@ class DeepLabSAM:
         sam_model="sam3:latest",
         pose_model="topviewmouse",
         keypoint_threshold=0.3,
+        device=None,
     ):
-        self.sam = OSAM(model=sam_model)
-        self.pose = DLCPose(model=pose_model)
+        self.sam = OSAM(model=sam_model, device=device)
+        self.pose = DLCPose(model=pose_model, device=device)
         self.keypoint_threshold = keypoint_threshold
 
     def detect(

@@ -38,6 +38,7 @@ def run(args):
         sam_model=args.sam_model,
         pose_model=args.pose_model,
         keypoint_threshold=args.keypoint_threshold,
+        device=args.device,
     )
     tracker = OCSORTTracker(frame_rate=frame_rate)
 
