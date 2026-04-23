@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
-from deeplabsam.models.dlc import DLCPose
+from deeplabsam.models.dlc import DLCPose, _REGISTRY
 
 
-@pytest.fixture(scope="module")
-def model():
-    return DLCPose()
+@pytest.fixture(scope="module", params=list(_REGISTRY))
+def model(request):
+    return DLCPose(model=request.param)
 
 
 @pytest.mark.slow
@@ -40,8 +40,7 @@ def test_inference_on_roi(model, example_image, example_box):
     assert kpts.ndim == 3
     assert kpts.shape[0] == 1
     assert kpts.shape[2] == 3
-    K = kpts.shape[1]
-    assert K > 0
+    assert kpts.shape[1] > 0
 
     xy, conf = kpts[0, :, :2], kpts[0, :, 2]
     assert (xy[:, 0] >= 0).all() and (xy[:, 0] <= W).all()
@@ -57,6 +56,5 @@ def test_mixed_valid_invalid_boxes(model, example_image, example_box):
     )
     kpts = model.predict(example_image, boxes)
     assert kpts.shape[0] == 2
-    # Invalid row must be all zeros; valid row must carry signal.
     assert np.all(kpts[1] == 0)
     assert kpts[0, :, 2].max() > 0.5
