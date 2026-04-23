@@ -14,6 +14,9 @@ dependencies = [
     "trackers>=2.3.0",
 ]
 
+[project.optional-dependencies]
+gpu = ["onnxruntime-gpu>=1.24.4"]
+
 [project.scripts]
 deeplabsam = "deeplabsam.cli:main"
 deeplabsam-image = "deeplabsam.runners.image:main"
