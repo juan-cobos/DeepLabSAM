@@ -49,13 +49,13 @@ def main():
 
     if args.command == "list-models":
         from deeplabsam.models.dlc import _REGISTRY as _POSE
-        from osam.apis import registered_model_types
+        from deeplabsam.models.sam import AVAILABLE_MODELS
         print("Pose models:")
         for name in _POSE:
             print(f"  {name}")
         print("\nSAM models:")
-        for m in registered_model_types:
-            print(f"  {m.name}")
+        for name in AVAILABLE_MODELS:
+            print(f"  {name}")
     elif args.command == "image":
         from deeplabsam.runners.image import run
         run(args)
