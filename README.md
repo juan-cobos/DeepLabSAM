@@ -117,6 +117,7 @@ Passed via `--sam-model` / `sam_model=` argument. Weights are downloaded automat
 | `sam:latest` | SAM ViT-H (600M) |
 | `efficientsam:10m` | EfficientSAM 10M |
 | `efficientsam:latest` | EfficientSAM 30M |
+| `yoloworld:latest` | YOLO-World XL |
 
 ---
 
