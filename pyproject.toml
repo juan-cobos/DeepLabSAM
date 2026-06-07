@@ -5,19 +5,20 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "huggingface-hub>=1.16.1",
     "numpy>=2.4.4",
-    "onnxruntime-gpu>=1.24.4",
     "opencv-python>=4.13.0.92",
-    "osam>=0.4.0",
+    "python-dotenv>=1.2.2",
     "supervision>=0.27.0.post2",
-    "tqdm>=4.0",
-    "trackers>=2.3.0",
+    # timm supplies the HRNet backbone for the SuperAnimal DeepLabCut pose heads,
+    # built from the bundled configs (no deeplabcut dependency).
+    "timm>=1.0.7",
+    "torch>=2.12.0",
+    "torchvision>=0.23.0",
+    "transformers>=5.10.2",
 ]
 
-[project.scripts]
-deeplabsam = "deeplabsam.cli:main"
-deeplabsam-image = "deeplabsam.runners.image:main"
-deeplabsam-video = "deeplabsam.runners.video:main"
+# [project.scripts]  # TODO: re-add when CLI is migrated
 
 [build-system]
 requires = ["hatchling"]
@@ -30,9 +31,6 @@ packages = ["deeplabsam"]
 dev = [
     "pytest>=8.0",
 ]
-
-[tool.uv]
-override-dependencies = ["onnxruntime-gpu>=1.24.4"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
