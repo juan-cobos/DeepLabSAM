@@ -1,67 +1,13 @@
 import os
-from dataclasses import dataclass
 
 import numpy as np
-import supervision as sv
 import torch
 from dotenv import load_dotenv
 from transformers import Sam3VideoModel, Sam3VideoProcessor
 
+from deeplabsam.segment.frame_result import FrameResult
+
 load_dotenv()
-
-
-@dataclass
-class FrameResult:
-    """One frame of SAM 3 video output, kept in two representations.
-
-    The pose stage (a torch DeepLabCut head in the same CUDA process) consumes
-    the raw GPU tensors directly — no numpy round-trip. The output/annotation
-    stage calls :meth:`to_detections` for numpy ``sv.Detections``. Keeping both
-    avoids converting tensors that the hot path never needs on the CPU.
-
-    Attributes:
-        frame_idx: index of this frame in the stream.
-        frame: original RGB ``(H, W, 3)`` uint8 array (source for pose crops).
-        boxes: ``(N, 4)`` xyxy float tensor on the inference device.
-        masks: ``(N, H, W)`` bool tensor on the inference device.
-        object_ids: ``(N,)`` int — persistent track IDs.
-        scores: ``(N,)`` float tensor on the inference device.
-        class_names: length-``N`` list of the prompt text that detected each object.
-        class_ids: ``(N,)`` int — index of each object's prompt in the prompt list.
-    """
-
-    frame_idx: int
-    frame: np.ndarray
-    boxes: torch.Tensor
-    masks: torch.Tensor
-    object_ids: np.ndarray
-    scores: torch.Tensor
-    class_names: list[str]
-    class_ids: np.ndarray
-
-    def __len__(self):
-        return len(self.object_ids)
-
-    def to_detections(self, nms_threshold: float = 0.5) -> sv.Detections:
-        """Numpy ``sv.Detections`` for annotation / serialization.
-
-        Carries ``tracker_id`` (object IDs), ``class_id`` + ``data["class_name"]``
-        (the prompt), masks and confidences. This is the only place tensors are
-        moved to the CPU.
-
-        Boxes come from the video processor's ``masks_to_boxes`` (already tight).
-        Mask-IoU NMS via ``with_nms`` removes overlapping duplicates.
-        """
-        if len(self) == 0:
-            return sv.Detections.empty()
-        return sv.Detections(
-            xyxy=self.boxes.detach().cpu().float().numpy().astype(np.float32),
-            mask=self.masks.detach().cpu().numpy().astype(bool),
-            confidence=self.scores.detach().cpu().float().numpy().astype(np.float32),
-            tracker_id=self.object_ids,
-            class_id=self.class_ids,
-            data={"class_name": np.asarray(self.class_names)},
-        ).with_nms(threshold=nms_threshold)
 
 
 class SAM3Video:

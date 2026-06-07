@@ -13,22 +13,12 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from deeplabsam.pose.models.criterions import (
-    BaseCriterion,
-    BaseLossAggregator,
-)
-from deeplabsam.pose.models.heads.base import (
-    HEADS,
-    BaseHead,
-    WeightConversionMixin,
-)
+from deeplabsam.pose.models.heads.base import HEADS, BaseHead
 from deeplabsam.pose.models.predictors import BasePredictor
-from deeplabsam.pose.models.target_generators import BaseGenerator
-from deeplabsam.pose.models.weight_init import BaseWeightInitializer
 
 
 @HEADS.register_module
-class HeatmapHead(WeightConversionMixin, BaseHead):
+class HeatmapHead(BaseHead):
     """Deconvolutional head to predict maps from the extracted features.
 
     This class implements a simple deconvolutional head to predict maps from the
@@ -36,32 +26,16 @@ class HeatmapHead(WeightConversionMixin, BaseHead):
 
     Args:
         predictor: The predictor used to transform heatmaps into keypoints.
-        target_generator: The module to generate target heatmaps from keypoints.
-        criterion: The loss criterion(s) for the head.
-        aggregator: The loss aggregator to use, if multiple criterions are used.
         heatmap_config: The configuration for the heatmap outputs of the head.
         locref_config: The configuration for the location refinement outputs (None if
             no location refinement should be used).
-        weight_init: The way to initialize weights for the head. If None, default
-            PyTorch initialization is used. Otherwise, a BaseWeightInitializer can be
-            given (or a configuration for a BaseWeightInitializer). To initialize
-            the weights with a normal distribution, you could pass
-            ``weight_init="normal"`` (which initializes weights using a Normal
-            distribution 0.001 and biases with 0), or you could pass ``weight_init={
-            type="normal", std=0.01}`` to change the standard deviation used. All
-            BaseWeightInitializers are defined in deeplabcut/pose_estimation_pytorch/
-            models/weight_init.py.
     """
 
     def __init__(
         self,
         predictor: BasePredictor,
-        target_generator: BaseGenerator,
-        criterion: dict[str, BaseCriterion] | BaseCriterion,
-        aggregator: BaseLossAggregator | None,
         heatmap_config: dict,
         locref_config: dict | None = None,
-        weight_init: str | dict | BaseWeightInitializer | None = None,
     ) -> None:
         heatmap_head = DeconvModule(**heatmap_config)
         locref_head = None
@@ -77,53 +51,15 @@ class HeatmapHead(WeightConversionMixin, BaseHead):
                     f"heatmap_config={heatmap_config}, locref_config={locref_config}"
                 )
 
-        super().__init__(
-            heatmap_head.stride,
-            predictor,
-            target_generator,
-            criterion,
-            aggregator,
-            weight_init,
-        )
+        super().__init__(heatmap_head.stride, predictor)
         self.heatmap_head = heatmap_head
         self.locref_head = locref_head
-        self._init_weights()
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         outputs = {"heatmap": self.heatmap_head(x)}
         if self.locref_head is not None:
             outputs["locref"] = self.locref_head(x)
         return outputs
-
-    @staticmethod
-    def convert_weights(
-        state_dict: dict[str, torch.Tensor],
-        module_prefix: str,
-        conversion: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
-        """Converts pre-trained weights to be fine-tuned on another dataset.
-
-        Args:
-            state_dict: the state dict for the pre-trained model
-            module_prefix: the prefix for weights in this head (e.g., 'heads.bodypart.')
-            conversion: the mapping of old indices to new indices
-        """
-        state_dict = DeconvModule.convert_weights(
-            state_dict,
-            f"{module_prefix}heatmap_head.",
-            conversion,
-        )
-
-        locref_conversion = torch.stack(
-            [2 * conversion, 2 * conversion + 1],
-            dim=1,
-        ).reshape(-1)
-        state_dict = DeconvModule.convert_weights(
-            state_dict,
-            f"{module_prefix}locref_head.",
-            locref_conversion,
-        )
-        return state_dict
 
 
 class DeconvModule(nn.Module):
@@ -208,43 +144,3 @@ class DeconvModule(nn.Module):
         x = self.deconv_layers(x)
         x = self.final_conv(x)
         return x
-
-    @staticmethod
-    def convert_weights(
-        state_dict: dict[str, torch.Tensor],
-        module_prefix: str,
-        conversion: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
-        """Converts pre-trained weights to be fine-tuned on another dataset.
-
-        Args:
-            state_dict: the state dict for the pre-trained model
-            module_prefix: the prefix for weights in this head (e.g., 'heads.bodypart')
-            conversion: the mapping of old indices to new indices
-        """
-        if f"{module_prefix}final_conv.weight" in state_dict:
-            # has final convolution
-            weight_key = f"{module_prefix}final_conv.weight"
-            bias_key = f"{module_prefix}final_conv.bias"
-            state_dict[weight_key] = state_dict[weight_key][conversion]
-            state_dict[bias_key] = state_dict[bias_key][conversion]
-            return state_dict
-
-        # get the last deconv layer of the net
-        next_index = 0
-        while f"{module_prefix}deconv_layers.{next_index}.weight" in state_dict:
-            next_index += 1
-        last_index = next_index - 1
-
-        # if there are deconv layers for this module prefix (there might not be,
-        # e.g., when there are no location refinement layers in a heatmap head)
-        if last_index >= 0:
-            weight_key = f"{module_prefix}deconv_layers.{last_index}.weight"
-            bias_key = f"{module_prefix}deconv_layers.{last_index}.bias"
-
-            # for ConvTranspose2d, the weight shape is (in_channels, out_channels, ...)
-            # while it's (out_channels, in_channels, ...) for Conv2d
-            state_dict[weight_key] = state_dict[weight_key][:, conversion]
-            state_dict[bias_key] = state_dict[bias_key][conversion]
-
-        return state_dict

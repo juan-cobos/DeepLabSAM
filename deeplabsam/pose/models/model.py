@@ -11,23 +11,14 @@
 from __future__ import annotations
 
 import copy
-import logging
 
 import torch
 import torch.nn as nn
 
-from deeplabsam.pose.core_weight_init import WeightInitialization
 from deeplabsam.pose.models.backbones import BACKBONES, BaseBackbone
-from deeplabsam.pose.models.criterions import (
-    CRITERIONS,
-    LOSS_AGGREGATORS,
-)
 from deeplabsam.pose.models.heads import HEADS, BaseHead
 from deeplabsam.pose.models.necks import NECKS, BaseNeck
 from deeplabsam.pose.models.predictors import PREDICTORS
-from deeplabsam.pose.models.target_generators import (
-    TARGET_GENERATORS,
-)
 
 
 class PoseModel(nn.Module):
@@ -83,42 +74,6 @@ class PoseModel(nn.Module):
             outputs[head_name] = head(features)
         return outputs
 
-    def get_loss(
-        self,
-        outputs: dict[str, dict[str, torch.Tensor]],
-        targets: dict[str, dict[str, torch.Tensor]],
-    ) -> dict[str, torch.Tensor]:
-        total_losses = []
-        losses: dict[str, torch.Tensor] = {}
-        for name, head in self.heads.items():
-            head_losses = head.get_loss(outputs[name], targets[name])
-            total_losses.append(head_losses["total_loss"])
-            for k, v in head_losses.items():
-                losses[f"{name}_{k}"] = v
-
-        # TODO: Different aggregation for multi-head loss?
-        losses["total_loss"] = torch.mean(torch.stack(total_losses))
-        return losses
-
-    def get_target(
-        self,
-        outputs: dict[str, dict[str, torch.Tensor]],
-        labels: dict,
-    ) -> dict[str, dict]:
-        """Summary:
-        Get targets for model training.
-
-        Args:
-            outputs: output of each head group
-            labels: dictionary of labels
-
-        Returns:
-            targets: dict of the targets for each model head group
-        """
-        return {
-            name: head.target_generator(self._strides[name], outputs[name], labels) for name, head in self.heads.items()
-        }
-
     def get_predictions(self, outputs: dict[str, dict[str, torch.Tensor]]) -> dict:
         """Abstract method for the forward pass of the Predictor.
 
@@ -148,19 +103,19 @@ class PoseModel(nn.Module):
         return self._strides[head]
 
     @staticmethod
-    def build(
-        cfg: dict,
-        weight_init: None | WeightInitialization = None,
-        pretrained_backbone: bool = False,
-    ) -> PoseModel:
-        """
+    def build(cfg: dict, pretrained_backbone: bool = False) -> PoseModel:
+        """Build a pose model for inference from a config.
+
+        Constructs the backbone, optional neck, and heads (each with its
+        predictor). Training-only pieces (criterion / loss aggregator / target
+        generator) are not built — their config keys are ignored by the head
+        constructors. Weights are loaded separately by the caller via
+        ``load_state_dict`` (see ``DLCTorchPose``).
+
         Args:
             cfg: The configuration of the model to build.
-            weight_init: How model weights should be initialized. If None, ImageNet
-                pre-trained backbone weights are loaded from Timm.
-            pretrained_backbone: Whether to load an ImageNet-pretrained weights for
-                the backbone. This should only be set to True when building a model
-                which will be trained on a transfer learning task.
+            pretrained_backbone: Whether to load ImageNet-pretrained backbone
+                weights from Timm (only useful for transfer learning).
 
         Returns:
             the built pose model
@@ -175,83 +130,10 @@ class PoseModel(nn.Module):
         heads = {}
         for name, head_cfg in cfg["heads"].items():
             head_cfg = copy.deepcopy(head_cfg)
-            if "type" in head_cfg["criterion"]:
-                head_cfg["criterion"] = CRITERIONS.build(head_cfg["criterion"])
-            else:
-                weights = {}
-                criterions = {}
-                for loss_name, criterion_cfg in head_cfg["criterion"].items():
-                    weights[loss_name] = criterion_cfg.get("weight", 1.0)
-                    criterion_cfg = {k: v for k, v in criterion_cfg.items() if k != "weight"}
-                    criterions[loss_name] = CRITERIONS.build(criterion_cfg)
-
-                aggregator_cfg = {"type": "WeightedLossAggregator", "weights": weights}
-                head_cfg["aggregator"] = LOSS_AGGREGATORS.build(aggregator_cfg)
-                head_cfg["criterion"] = criterions
-
-            head_cfg["target_generator"] = TARGET_GENERATORS.build(head_cfg["target_generator"])
             head_cfg["predictor"] = PREDICTORS.build(head_cfg["predictor"])
             heads[name] = HEADS.build(head_cfg)
 
-        model = PoseModel(cfg=cfg, backbone=backbone, neck=neck, heads=heads)
-
-        if weight_init is not None:
-            logging.info(f"Loading pretrained model weights: {weight_init}")
-            logging.info(f"The pose model is loading from {weight_init.snapshot_path}")
-            snapshot = torch.load(weight_init.snapshot_path, map_location="cpu")
-            state_dict = snapshot["model"]
-
-            # load backbone state dict
-            model.backbone.load_state_dict(filter_state_dict(state_dict, "backbone"))
-
-            # if there's a neck, load state dict
-            if model.neck is not None:
-                model.neck.load_state_dict(filter_state_dict(state_dict, "neck"))
-
-            # load head state dicts
-            if weight_init.with_decoder:
-                all_head_state_dicts = filter_state_dict(state_dict, "heads")
-                conversion_tensor = torch.from_numpy(weight_init.conversion_array)
-                for name, head in model.heads.items():
-                    head_state_dict = filter_state_dict(all_head_state_dicts, name)
-
-                    # requires WeightConversionMixin
-                    if not weight_init.memory_replay:
-                        head_state_dict = head.convert_weights(
-                            state_dict=head_state_dict,
-                            module_prefix="",
-                            conversion=conversion_tensor,
-                        )
-
-                    head.load_state_dict(head_state_dict)
-
-        return model
-
-
-def filter_state_dict(state_dict: dict, module: str) -> dict[str, torch.Tensor]:
-    """Filters keys in the state dict for a module to only keep a given prefix. Removes
-    the module from the keys (e.g. for module="backbone", "backbone.stage1.weight" will
-    be converted to "stage1.weight" so the state dict can be loaded into the backbone
-    directly).
-
-    Args:
-        state_dict: the state dict
-        module: the module to keep, e.g. "backbone"
-
-    Returns:
-        the filtered state dict, with the module removed from the keys
-
-    Examples:
-        state_dict = {"backbone.conv.weight": t1, "head.conv.weight": t2}
-        filtered = filter_state_dict(state_dict, "backbone")
-        # filtered = {"conv.weight": t1}
-        model.backbone.load_state_dict(filtered)
-    """
-    return {
-        ".".join(k.split(".")[1:]): v  # remove 'backbone.' from the keys
-        for k, v in state_dict.items()
-        if k.startswith(module)
-    }
+        return PoseModel(cfg=cfg, backbone=backbone, neck=neck, heads=heads)
 
 
 def _model_stride(backbone_stride: int | float, head_stride: int | float) -> float:

@@ -1,0 +1,91 @@
+"""Shared per-frame result for the segment backends.
+
+Both video backends (``sam3video`` on Transformers, ``sam3video_meta`` on Meta's
+repo) yield this same :class:`FrameResult`, so downstream (pose, annotation)
+doesn't care which backend produced it.
+"""
+
+from dataclasses import dataclass, field
+
+import numpy as np
+import supervision as sv
+import torch
+
+
+@dataclass
+class FrameResult:
+    """One frame of SAM 3 video output, kept in two representations.
+
+    The pose stage (a torch DeepLabCut head in the same CUDA process) can consume
+    the GPU tensors directly: :meth:`frame_tensor` uploads the frame once and
+    ``boxes`` is already on-device, so cropping happens on the GPU with no per-crop
+    host round-trip (see ``DLCTorchPose.predict_tensor``). The output/annotation
+    stage instead calls :meth:`to_detections` for numpy ``sv.Detections`` — that
+    is the only place masks/boxes are moved to the CPU.
+
+    Attributes:
+        frame_idx: index of this frame in the stream.
+        frame: original RGB ``(H, W, 3)`` uint8 array (source for pose crops).
+        boxes: ``(N, 4)`` xyxy float tensor on the inference device.
+        masks: ``(N, H, W)`` bool tensor on the inference device.
+        object_ids: ``(N,)`` int — persistent track IDs.
+        scores: ``(N,)`` float tensor on the inference device.
+        class_names: length-``N`` list of the prompt text that detected each object.
+        class_ids: ``(N,)`` int — index of each object's prompt in the prompt list.
+    """
+
+    frame_idx: int
+    frame: np.ndarray
+    boxes: torch.Tensor
+    masks: torch.Tensor
+    object_ids: np.ndarray
+    scores: torch.Tensor
+    class_names: list[str]
+    class_ids: np.ndarray
+    # Lazily-uploaded GPU copy of ``frame`` (CHW uint8); cached across calls.
+    _frame_tensor: torch.Tensor | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    def __len__(self):
+        return len(self.object_ids)
+
+    def frame_tensor(self, device=None) -> torch.Tensor:
+        """``frame`` as a ``(3, H, W)`` uint8 tensor on ``device`` (cached).
+
+        Defaults to the device of ``boxes`` (the inference device), so the pose
+        stage can crop on the same GPU SAM 3 ran on. The upload happens once per
+        frame; repeated calls return the cached tensor.
+        """
+        if device is None:
+            device = self.boxes.device
+        if self._frame_tensor is None or self._frame_tensor.device != torch.device(
+            device
+        ):
+            self._frame_tensor = (
+                torch.from_numpy(np.ascontiguousarray(self.frame))
+                .to(device)
+                .permute(2, 0, 1)
+            )
+        return self._frame_tensor
+
+    def to_detections(self, nms_threshold: float = 0.5) -> sv.Detections:
+        """Numpy ``sv.Detections`` for annotation / serialization.
+
+        Carries ``tracker_id`` (object IDs), ``class_id`` + ``data["class_name"]``
+        (the prompt), masks and confidences. This is the only place tensors are
+        moved to the CPU.
+
+        Boxes are tight xyxy (derived from ``masks_to_boxes``). Mask-IoU NMS via
+        ``with_nms`` removes overlapping duplicates.
+        """
+        if len(self) == 0:
+            return sv.Detections.empty()
+        return sv.Detections(
+            xyxy=self.boxes.detach().cpu().float().numpy().astype(np.float32),
+            mask=self.masks.detach().cpu().numpy().astype(bool),
+            confidence=self.scores.detach().cpu().float().numpy().astype(np.float32),
+            tracker_id=self.object_ids,
+            class_id=self.class_ids,
+            data={"class_name": np.asarray(self.class_names)},
+        ).with_nms(threshold=nms_threshold)
