@@ -3,8 +3,6 @@ from dataclasses import dataclass
 
 import numpy as np
 import supervision as sv
-from supervision.detection.utils.converters import mask_to_xyxy
-from supervision.detection.utils.iou_and_nms import mask_non_max_suppression
 import torch
 from dotenv import load_dotenv
 from transformers import Sam3VideoModel, Sam3VideoProcessor
@@ -51,28 +49,19 @@ class FrameResult:
         (the prompt), masks and confidences. This is the only place tensors are
         moved to the CPU.
 
-        Tight bounding boxes are computed from masks (ignoring SAM 3's loose
-        native boxes), and mask-IoU NMS removes overlapping duplicates.
+        Boxes come from the video processor's ``masks_to_boxes`` (already tight).
+        Mask-IoU NMS via ``with_nms`` removes overlapping duplicates.
         """
         if len(self) == 0:
             return sv.Detections.empty()
-        masks_np = self.masks.detach().cpu().numpy().astype(bool)
-        scores_np = self.scores.detach().cpu().float().numpy().astype(np.float32)
-        boxes_np = mask_to_xyxy(masks_np).astype(np.float32)
-
-        predictions = np.column_stack([boxes_np, scores_np, self.class_ids])
-        keep = mask_non_max_suppression(
-            predictions, masks_np, iou_threshold=nms_threshold
-        )
-
         return sv.Detections(
-            xyxy=boxes_np[keep],
-            mask=masks_np[keep],
-            confidence=scores_np[keep],
-            tracker_id=self.object_ids[keep],
-            class_id=self.class_ids[keep],
-            data={"class_name": np.asarray(self.class_names)[keep]},
-        )
+            xyxy=self.boxes.detach().cpu().float().numpy().astype(np.float32),
+            mask=self.masks.detach().cpu().numpy().astype(bool),
+            confidence=self.scores.detach().cpu().float().numpy().astype(np.float32),
+            tracker_id=self.object_ids,
+            class_id=self.class_ids,
+            data={"class_name": np.asarray(self.class_names)},
+        ).with_nms(threshold=nms_threshold)
 
 
 class SAM3Video:
