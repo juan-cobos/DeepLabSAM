@@ -1,8 +1,12 @@
-"""Shared per-frame result for the segment backends.
+"""Shared per-frame result for the SAM 3 video segment stage.
 
-Both video backends (``sam3video`` on Transformers, ``sam3video_meta`` on Meta's
-repo) yield this same :class:`FrameResult`, so downstream (pose, annotation)
-doesn't care which backend produced it.
+The HF backend (``sam3video``) yields this :class:`SegmentResult`, keeping
+detections as GPU tensors so the pose stage (a torch DeepLabCut head in the same
+CUDA process) can crop on-device with no host round-trip: :meth:`frame_tensor`
+uploads the frame once and ``boxes`` is already on the inference device.
+
+The raw, pre-NMS boxes feed pose directly. :meth:`to_detections` builds numpy
+``sv.Detections`` for annotation / serialization (also pre-NMS — no dedup).
 """
 
 from dataclasses import dataclass, field
@@ -13,15 +17,14 @@ import torch
 
 
 @dataclass
-class FrameResult:
+class SegmentResult:
     """One frame of SAM 3 video output, kept in two representations.
 
-    The pose stage (a torch DeepLabCut head in the same CUDA process) can consume
-    the GPU tensors directly: :meth:`frame_tensor` uploads the frame once and
-    ``boxes`` is already on-device, so cropping happens on the GPU with no per-crop
-    host round-trip (see ``DLCTorchPose.predict_tensor``). The output/annotation
-    stage instead calls :meth:`to_detections` for numpy ``sv.Detections`` — that
-    is the only place masks/boxes are moved to the CPU.
+    The pose stage consumes the GPU tensors directly: :meth:`frame_tensor`
+    uploads the frame once and ``boxes`` is already on-device, so cropping
+    happens on the GPU with no per-crop host round-trip (see
+    ``DLCTorchPose.predict_tensor``). Boxes are the raw, pre-NMS detections — the
+    caller applies NMS only when it wants it.
 
     Attributes:
         frame_idx: index of this frame in the stream.
@@ -69,15 +72,12 @@ class FrameResult:
             )
         return self._frame_tensor
 
-    def to_detections(self, nms_threshold: float = 0.5) -> sv.Detections:
+    def to_detections(self) -> sv.Detections:
         """Numpy ``sv.Detections`` for annotation / serialization.
 
         Carries ``tracker_id`` (object IDs), ``class_id`` + ``data["class_name"]``
         (the prompt), masks and confidences. This is the only place tensors are
-        moved to the CPU.
-
-        Boxes are tight xyxy (derived from ``masks_to_boxes``). Mask-IoU NMS via
-        ``with_nms`` removes overlapping duplicates.
+        moved to the CPU. Pre-NMS — the raw detections, no dedup.
         """
         if len(self) == 0:
             return sv.Detections.empty()
@@ -88,4 +88,4 @@ class FrameResult:
             tracker_id=self.object_ids,
             class_id=self.class_ids,
             data={"class_name": np.asarray(self.class_names)},
-        ).with_nms(threshold=nms_threshold)
+        )

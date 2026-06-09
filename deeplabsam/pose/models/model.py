@@ -17,15 +17,14 @@ import torch.nn as nn
 
 from deeplabsam.pose.models.backbones import BACKBONES, BaseBackbone
 from deeplabsam.pose.models.heads import HEADS, BaseHead
-from deeplabsam.pose.models.necks import NECKS, BaseNeck
 from deeplabsam.pose.models.predictors import PREDICTORS
 
 
 class PoseModel(nn.Module):
     """A pose estimation model.
 
-    A pose estimation model is composed of a backbone, optionally a neck, and an
-    arbitrary number of heads. Outputs are computed as follows:
+    A pose estimation model is composed of a backbone and an arbitrary number of
+    heads. Outputs are computed as follows:
     """
 
     def __init__(
@@ -33,20 +32,17 @@ class PoseModel(nn.Module):
         cfg: dict,
         backbone: BaseBackbone,
         heads: dict[str, BaseHead],
-        neck: BaseNeck | None = None,
     ) -> None:
         """
         Args:
             cfg: configuration dictionary for the model.
             backbone: backbone network architecture.
             heads: the heads for the model
-            neck: neck network architecture (default is None). Defaults to None.
         """
         super().__init__()
         self.cfg = cfg
         self.backbone = backbone
         self.heads = nn.ModuleDict(heads)
-        self.neck = neck
         self.output_features = False
 
         self._strides = {name: _model_stride(self.backbone.stride, head.stride) for name, head in heads.items()}
@@ -63,8 +59,6 @@ class PoseModel(nn.Module):
         if x.dim() == 3:
             x = x[None, :]
         features = self.backbone(x, **backbone_kwargs)
-        if self.neck:
-            features = self.neck(features)
 
         outputs = {}
         if self.output_features:
@@ -106,11 +100,11 @@ class PoseModel(nn.Module):
     def build(cfg: dict, pretrained_backbone: bool = False) -> PoseModel:
         """Build a pose model for inference from a config.
 
-        Constructs the backbone, optional neck, and heads (each with its
-        predictor). Training-only pieces (criterion / loss aggregator / target
-        generator) are not built — their config keys are ignored by the head
-        constructors. Weights are loaded separately by the caller via
-        ``load_state_dict`` (see ``DLCTorchPose``).
+        Constructs the backbone and heads (each with its predictor).
+        Training-only pieces (criterion / loss aggregator / target generator)
+        are not built — their config keys are ignored by the head constructors.
+        Weights are loaded separately by the caller via ``load_state_dict``
+        (see ``DLCTorchPose``).
 
         Args:
             cfg: The configuration of the model to build.
@@ -123,17 +117,13 @@ class PoseModel(nn.Module):
         cfg["backbone"]["pretrained"] = pretrained_backbone
         backbone = BACKBONES.build(dict(cfg["backbone"]))
 
-        neck = None
-        if cfg.get("neck"):
-            neck = NECKS.build(dict(cfg["neck"]))
-
         heads = {}
         for name, head_cfg in cfg["heads"].items():
             head_cfg = copy.deepcopy(head_cfg)
             head_cfg["predictor"] = PREDICTORS.build(head_cfg["predictor"])
             heads[name] = HEADS.build(head_cfg)
 
-        return PoseModel(cfg=cfg, backbone=backbone, neck=neck, heads=heads)
+        return PoseModel(cfg=cfg, backbone=backbone, heads=heads)
 
 
 def _model_stride(backbone_stride: int | float, head_stride: int | float) -> float:

@@ -5,7 +5,7 @@ import torch
 from dotenv import load_dotenv
 from transformers import Sam3VideoModel, Sam3VideoProcessor
 
-from deeplabsam.segment.frame_result import FrameResult
+from deeplabsam.segment.segment_result import SegmentResult
 
 load_dotenv()
 
@@ -31,9 +31,6 @@ class SAM3Video:
       VRAM stays flat (~2 GB) regardless of video length; only host RAM grows.
     - **bf16**: ~3x faster than fp32 and halves VRAM, with no visible quality loss
       here.
-    - **Native 1008 resolution**: SAM 3's detector backbone has resolution-locked
-      buffers, so lower resolutions raise a shape mismatch. Resolution is *not*
-      a tuning knob; bf16 is the speed lever instead.
 
     No re-prompting: prompts are set once at the start of the stream.
     Weights (``facebook/sam3``) are gated; set ``HF_TOKEN`` (e.g. in ``.env``).
@@ -66,8 +63,8 @@ class SAM3Video:
                 Each prompt is a class; detections are tagged with their prompt.
 
         Yields:
-            :class:`FrameResult` per frame, with persistent ``object_ids`` and a
-            ``class_name`` per detection.
+            :class:`SegmentResult` per frame, with persistent ``object_ids`` and
+            a ``class_name`` per detection.
         """
         prompt_list = [prompts] if isinstance(prompts, str) else list(prompts)
         class_to_id = {p: i for i, p in enumerate(prompt_list)}
@@ -107,7 +104,7 @@ class SAM3Video:
             class_names = [obj_to_prompt[int(oid)] for oid in object_ids]
             class_ids = np.array([class_to_id[c] for c in class_names], dtype=int)
 
-            yield FrameResult(
+            yield SegmentResult(
                 frame_idx=out.frame_idx,
                 frame=frame,
                 boxes=result["boxes"],
@@ -142,10 +139,9 @@ if __name__ == "__main__":
     for res in model.stream(frame_iter(cap), prompts=["mice"]):
         n += 1
         if res.frame_idx < 2 or res.frame_idx == 19:
-            det = res.to_detections()
             print(
-                f"frame {res.frame_idx}: {len(res)} objs, ids={res.object_ids.tolist()}, "
-                f"classes={res.class_names}, det.class_name={list(det.data.get('class_name', []))}"
+                f"frame {res.frame_idx}: {len(res)} objs, "
+                f"ids={res.object_ids.tolist()}, classes={res.class_names}"
             )
     cap.release()
     dt = time.perf_counter() - t0
