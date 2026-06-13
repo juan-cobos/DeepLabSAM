@@ -60,7 +60,7 @@ class Pipeline:
         video_path: str,
         text: str | list[str] = "mouse",
         max_frames: int | None = None,
-        output_dir: str = "outputs",
+        output_dir: str | Path = "outputs",
         name_suffix: str = "_annotated",
         keypoint_threshold: float = 0.3,
         export_json: bool = True,
@@ -142,7 +142,10 @@ class Pipeline:
                     sink.append(det, custom_data={"frame_index": res.frame_idx})
                 annotated = mask_annot.annotate(annotated, det)
                 annotated = box_annot.annotate(annotated, det)
-                labels = [f"#{tid}" for tid in det.tracker_id]
+                labels = [
+                    f"{cls} #{tid}"
+                    for cls, tid in zip(det.data["class_name"], det.tracker_id)
+                ]
                 annotated = label_annot.annotate(annotated, det, labels=labels)
                 annotated = vertex_annot.annotate(annotated, keypoints)
                 writer.write(annotated)
