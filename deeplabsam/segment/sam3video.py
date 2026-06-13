@@ -1,4 +1,5 @@
 import os
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 import torch
@@ -36,7 +37,12 @@ class SAM3Video:
     Weights (``facebook/sam3``) are gated; set ``HF_TOKEN`` (e.g. in ``.env``).
     """
 
-    def __init__(self, model="facebook/sam3", device=None, dtype=torch.bfloat16):
+    def __init__(
+        self,
+        model: str = "facebook/sam3",
+        device: str | None = None,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
         if device in (None, "auto"):
             device = "cuda" if torch.cuda.is_available() else "cpu"
         elif device == "cuda" and not torch.cuda.is_available():
@@ -54,7 +60,9 @@ class SAM3Video:
         )
         self.processor = Sam3VideoProcessor.from_pretrained(model, **kw)
 
-    def stream(self, frames, prompts):
+    def stream(
+        self, frames: Iterable[np.ndarray], prompts: str | list[str]
+    ) -> Iterator[SegmentResult]:
         """Segment + track objects matching ``prompts`` across a frame stream.
 
         Args:

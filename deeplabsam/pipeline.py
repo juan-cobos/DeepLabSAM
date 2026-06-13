@@ -10,9 +10,11 @@ on-device frame feed pose directly, so cropping stays on the GPU SAM 3 ran on;
 NMS is not applied — the annotated video shows every raw detection.
 """
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import cv2
+import numpy as np
 import supervision as sv
 from tqdm import tqdm
 
@@ -20,7 +22,9 @@ from deeplabsam.pose.dlc import DLCTorchPose
 from deeplabsam.segment.sam3video import SAM3Video
 
 
-def rgb_frames(cap, max_frames=None):
+def rgb_frames(
+    cap: cv2.VideoCapture, max_frames: int | None = None
+) -> Iterator[np.ndarray]:
     n = 0
     while True:
         ok, bgr = cap.read()
@@ -37,18 +41,20 @@ class Pipeline:
     and ``super_animal`` default to auto-CUDA and the top-view mouse head.
     """
 
-    def __init__(self, device=None, super_animal="superanimal_topviewmouse"):
+    def __init__(
+        self, device: str | None = None, super_animal: str = "superanimal_topviewmouse"
+    ):
         self.predictor = SAM3Video(device=device)
         self.pose_head = DLCTorchPose(super_animal=super_animal, device=device)
 
     def run(
         self,
-        video_path,
-        text="mouse",
-        max_frames=None,
-        output_dir="outputs",
-        name_suffix="_annotated",
-        keypoint_threshold=0.3,
+        video_path: str,
+        text: str | list[str] = "mouse",
+        max_frames: int | None = None,
+        output_dir: str = "outputs",
+        name_suffix: str = "_annotated",
+        keypoint_threshold: float = 0.3,
     ) -> Path:
         """Stream ``video_path``, detect+track+pose, write an annotated mp4.
 
@@ -87,8 +93,11 @@ class Pipeline:
 
             # Raw, pre-NMS boxes + the on-GPU frame feed pose directly: the frame
             # is uploaded once and boxes already live on the inference device, so
-            # the letterbox + pose run on the GPU SAM 3 ran on.
-            kpts = self.pose_head.predict_tensor(res.frame_tensor(), res.boxes)
+            # the letterbox + pose run on the GPU SAM 3 ran on. Per-instance masks
+            # are passed too, so each crop keeps only the target animal's pixels.
+            kpts = self.pose_head.predict_tensor(
+                res.frame_tensor(), res.boxes, res.masks
+            )
             xy = kpts[:, :, :2].copy()
             conf = kpts[:, :, 2]
             xy[conf < keypoint_threshold] = 0  # let annotator skip them

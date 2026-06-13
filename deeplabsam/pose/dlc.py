@@ -30,13 +30,12 @@ _DEFAULT_POSE_MODEL = {
 
 
 class DLCTorchPose:
-    INPUT_SIZE = 256  # divisible by 32 (HRNet auto-padding requirement)
-
     def __init__(
         self,
-        super_animal="superanimal_topviewmouse",
-        model_name=None,
-        device=None,
+        super_animal: str = "superanimal_topviewmouse",
+        model_name: str | None = None,
+        device: str | None = None,
+        input_size: int = 256,  # letterbox size; rounded to the backbone's pad divisor
     ):
         if device in (None, "auto"):
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -52,6 +51,16 @@ class DLCTorchPose:
             detector_name=None,
             device=device,
         )
+        # The backbone's input must be a multiple of its auto-padding divisor
+        # (32 for HRNet); ResNet declares none, so it's unconstrained (divisor 1).
+        pad = config["data"].get("inference", {}).get("auto_padding", {})
+        divisor = max(pad.get("pad_width_divisor", 1), pad.get("pad_height_divisor", 1))
+        if input_size % divisor != 0:
+            raise ValueError(
+                f"input_size must be divisible by {divisor} for {model_name}, "
+                f"got {input_size}"
+            )
+        self.input_size = input_size
         self.bodyparts = list(config["metadata"]["bodyparts"])
         self.num_bodyparts = len(self.bodyparts)
 
@@ -69,21 +78,33 @@ class DLCTorchPose:
         self._std = _IMAGENET_STD
 
     @torch.no_grad()
-    def predict(self, image, boxes):
+    def predict(
+        self,
+        image: np.ndarray,
+        boxes: np.ndarray | torch.Tensor,
+        masks: np.ndarray | torch.Tensor | None = None,
+    ) -> np.ndarray:
         """Pose on each box — numpy convenience wrapper around :meth:`predict_tensor`.
 
         Args:
             image: HxWx3 RGB uint8 array.
             boxes: (N, 4) xyxy in image pixel coords.
+            masks: optional (N, H, W) bool/float per-instance masks; background is
+                zeroed in each crop so neighbouring animals don't pollute the pose.
 
         Returns:
             (N, K, 3) array of (x, y, confidence) in original image coords.
         """
         img = torch.from_numpy(np.ascontiguousarray(image))
-        return self.predict_tensor(img, torch.as_tensor(np.asarray(boxes)))
+        return self.predict_tensor(img, torch.as_tensor(boxes), masks)
 
     @torch.no_grad()
-    def predict_tensor(self, image, boxes):
+    def predict_tensor(
+        self,
+        image: torch.Tensor,
+        boxes: np.ndarray | torch.Tensor,
+        masks: np.ndarray | torch.Tensor | None = None,
+    ) -> np.ndarray:
         """Pose on each box, cropping on-device with torchvision transforms v2.
 
         The letterbox (aspect-preserving resize + center-pad) is built from
@@ -95,6 +116,11 @@ class DLCTorchPose:
             image: full frame as a ``(3, H, W)`` (or ``(H, W, 3)``) uint8/float
                 tensor; moved to the model device and scaled to ``[0, 1]``.
             boxes: ``(N, 4)`` xyxy tensor in image pixel coords.
+            masks: optional ``(N, H, W)`` per-instance masks aligned with ``boxes``.
+                When given, each crop is multiplied by its mask *after*
+                normalization, so background (and any overlapping animal) sits at
+                the network's neutral value 0 instead of an OOD black box. This
+                keeps the pose on the intended animal when boxes overlap.
 
         Returns:
             (N, K, 3) array of (x, y, confidence) in original image coords.
@@ -106,10 +132,12 @@ class DLCTorchPose:
         N = boxes.shape[0]
         if N == 0:
             return np.zeros((0, self.num_bodyparts, 3), dtype=np.float32)
+        if masks is not None:
+            masks = torch.as_tensor(masks, device=self.device).float()
 
         H, W = image.shape[-2:]
-        size = self.INPUT_SIZE
-        crops, tfs, valid = [], [], []
+        size = self.input_size
+        crops, mask_crops, tfs, valid = [], [], [], []
         for i, (x1, y1, x2, y2) in enumerate(boxes.round().to(torch.int64).tolist()):
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(W, x2), min(H, y2)
@@ -119,15 +147,20 @@ class DLCTorchPose:
             scale = min(size / cw, size / ch)
             new_w, new_h = max(1, int(cw * scale)), max(1, int(ch * scale))
             pad_x, pad_y = (size - new_w) // 2, (size - new_h) // 2
+            pad = [pad_x, pad_y, size - new_w - pad_x, size - new_h - pad_y]
             # crop the box and aspect-preserving resize in one op, then center-pad
             # to a square SxS canvas ([left, top, right, bottom] padding).
             resized = TF.resized_crop(
                 image, y1, x1, ch, cw, [new_h, new_w], antialias=True
             )
-            canvas = TF.pad(
-                resized, [pad_x, pad_y, size - new_w - pad_x, size - new_h - pad_y]
-            )
-            crops.append(canvas)
+            crops.append(TF.pad(resized, pad))
+            if masks is not None:
+                # Letterbox the matching mask the same way (no antialias keeps the
+                # edge crisp); padded region stays 0 so it's masked out too.
+                m = TF.resized_crop(
+                    masks[i, None], y1, x1, ch, cw, [new_h, new_w], antialias=False
+                )
+                mask_crops.append(TF.pad(m, pad))
             tfs.append((x1, y1, scale, pad_x, pad_y))
             valid.append(i)
 
@@ -135,9 +168,19 @@ class DLCTorchPose:
             return np.zeros((N, self.num_bodyparts, 3), dtype=np.float32)
 
         batch = TF.normalize(torch.stack(crops), mean=self._mean, std=self._std)
+        if mask_crops:
+            # After normalization, neutral == 0, so zeroing here drops background
+            # to the network's baseline rather than an OOD black patch.
+            batch = batch * torch.stack(mask_crops)
         return self._decode(batch, tfs, valid, N)
 
-    def _decode(self, batch, tfs, valid, N):
+    def _decode(
+        self,
+        batch: torch.Tensor,
+        tfs: list[tuple[int, int, float, int, int]],
+        valid: list[int],
+        N: int,
+    ) -> np.ndarray:
         """Run the model on a normalized crop batch and map poses to image coords.
 
         ``batch`` is ``(V, 3, S, S)`` on device; ``tfs`` holds the per-crop
