@@ -1,18 +1,14 @@
 [project]
 name = "deeplabsam"
 version = "0.1.0"
-description = "Add your description here"
+description = "Text-prompted multi-animal pose tracking with pixel-accurate masks (SAM 3 video + DeepLabCut)."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
-    "einops>=0.8.2",
     "huggingface-hub>=1.16.1",
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
-    "psutil>=7.2.2",
-    "pycocotools>=2.0.11",
     "python-dotenv>=1.2.2",
-    "sam3",
     "supervision>=0.27.0.post2",
     # timm supplies the HRNet backbone for the SuperAnimal DeepLabCut pose heads,
     # built from the bundled configs (no deeplabcut dependency).
@@ -25,15 +21,6 @@ dependencies = [
 ]
 
 # [project.scripts]  # TODO: re-add when CLI is migrated
-
-[tool.uv]
-# sam3 pins numpy<2, but transformers 5 / torch 2.12 / supervision here all run
-# on numpy 2. Override sam3's conservative cap so the whole stack stays on one
-# numpy. (Verified sam3 video inference works on numpy 2 at runtime.)
-override-dependencies = ["numpy>=2.4.4"]
-
-[tool.uv.sources]
-sam3 = { git = "https://github.com/facebookresearch/sam3.git" }
 
 [build-system]
 requires = ["hatchling"]
