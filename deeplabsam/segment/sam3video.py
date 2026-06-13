@@ -42,6 +42,8 @@ class SAM3Video:
         model: str = "facebook/sam3",
         device: str | None = None,
         dtype: torch.dtype = torch.bfloat16,
+        state_device: str | None = None,
+        video_storage_device: str = "cpu",
     ):
         if device in (None, "auto"):
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -50,6 +52,8 @@ class SAM3Video:
         # bf16 on CPU is poorly supported; fall back to fp32 off the GPU.
         self.dtype = dtype if device == "cuda" else torch.float32
         self.device = device
+        self.state_device = state_device or "cpu"
+        self.video_storage_device = video_storage_device
 
         token = os.environ.get("HF_TOKEN")
         kw = {"token": token} if token else {}
@@ -80,8 +84,8 @@ class SAM3Video:
         session = self.processor.init_video_session(
             video=None,
             inference_device=self.device,
-            inference_state_device="cpu",
-            video_storage_device="cpu",
+            inference_state_device=self.state_device,
+            video_storage_device=self.video_storage_device,
             dtype=self.dtype,
         )
         self.processor.add_text_prompt(session, prompt_list)
