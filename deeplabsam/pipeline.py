@@ -10,8 +10,11 @@ on-device frame feed pose directly, so cropping stays on the GPU SAM 3 ran on;
 NMS is not applied — the annotated video shows every raw detection.
 """
 
+from pathlib import Path
+
 import cv2
 import supervision as sv
+from tqdm import tqdm
 
 from deeplabsam.pose.dlc import DLCTorchPose
 from deeplabsam.segment.sam3video import SAM3Video
@@ -43,12 +46,15 @@ class Pipeline:
         video_path,
         text="mouse",
         max_frames=None,
-        output_path="pipeline_out.mp4",
+        output_dir="outputs",
+        name_suffix="_annotated",
         keypoint_threshold=0.3,
-    ):
+    ) -> Path:
         """Stream ``video_path``, detect+track+pose, write an annotated mp4.
 
-        Returns ``output_path``.
+        The output is named after the input video (``<stem><name_suffix>.mp4``)
+        and written into ``output_dir``, which is created if needed. Returns the
+        output path.
         """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -56,15 +62,24 @@ class Pipeline:
         frame_rate = cap.get(cv2.CAP_PROP_FPS) or 30.0
         W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
+        if max_frames:
+            total = min(total, max_frames) if total else max_frames
+
+        output_dir = Path(output_dir).resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{Path(video_path).stem}{name_suffix}.mp4"
+
         writer = cv2.VideoWriter(
-            output_path, cv2.VideoWriter_fourcc(*"mp4v"), frame_rate, (W, H)
+            str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), frame_rate, (W, H)
         )
         mask_annot = sv.MaskAnnotator(color_lookup=sv.ColorLookup.TRACK)
         box_annot = sv.BoxAnnotator(color_lookup=sv.ColorLookup.TRACK)
         label_annot = sv.LabelAnnotator(color_lookup=sv.ColorLookup.TRACK)
         vertex_annot = sv.VertexAnnotator(color=sv.Color.RED, radius=3)
 
-        for res in self.predictor.stream(rgb_frames(cap, max_frames), text):
+        stream = self.predictor.stream(rgb_frames(cap, max_frames), text)
+        for res in tqdm(stream, total=total):
             annotated = cv2.cvtColor(res.frame, cv2.COLOR_RGB2BGR)
             if not res:
                 writer.write(annotated)
@@ -97,7 +112,7 @@ if __name__ == "__main__":
     pipe = Pipeline()
     pipe.run(
         video_path="/home/juan/Videos/edit.mp4",
-        text="mouse",
-        max_frames=30,
-        output_path="scripts/edit_pipeline_out.mp4",
+        text="mice",
+        max_frames=100,
+        output_dir="outputs",
     )
