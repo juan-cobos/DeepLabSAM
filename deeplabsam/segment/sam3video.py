@@ -1,14 +1,72 @@
 import os
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
 
 import numpy as np
+import supervision as sv
 import torch
 from dotenv import load_dotenv
 from transformers import Sam3VideoModel, Sam3VideoProcessor
 
-from deeplabsam.segment.segment_result import SegmentResult
-
 load_dotenv()
+
+
+@dataclass
+class SegmentResult:
+    """One frame of SAM 3 video output"""
+
+    frame_idx: int
+    frame: np.ndarray
+    boxes: torch.Tensor
+    masks: torch.Tensor
+    object_ids: np.ndarray
+    scores: torch.Tensor
+    class_names: list[str]
+    class_ids: np.ndarray
+    # Lazily-uploaded GPU copy of ``frame`` (CHW uint8); cached across calls.
+    _frame_tensor: torch.Tensor | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    def __len__(self):
+        return len(self.object_ids)
+
+    def frame_tensor(self, device=None) -> torch.Tensor:
+        """``frame`` as a ``(3, H, W)`` uint8 tensor on ``device`` (cached).
+
+        Defaults to the device of ``boxes`` (the inference device), so the pose
+        stage can crop on the same GPU SAM 3 ran on. The upload happens once per
+        frame; repeated calls return the cached tensor.
+        """
+        if device is None:
+            device = self.boxes.device
+        if self._frame_tensor is None or self._frame_tensor.device != torch.device(
+            device
+        ):
+            self._frame_tensor = (
+                torch.from_numpy(np.ascontiguousarray(self.frame))
+                .to(device)
+                .permute(2, 0, 1)
+            )
+        return self._frame_tensor
+
+    def to_detections(self) -> sv.Detections:
+        """Numpy ``sv.Detections`` for annotation / serialization.
+
+        Carries ``tracker_id`` (object IDs), ``class_id`` + ``data["class_name"]``
+        (the prompt), masks and confidences. This is the only place tensors are
+        moved to the CPU.
+        """
+        if len(self) == 0:
+            return sv.Detections.empty()
+        return sv.Detections(
+            xyxy=self.boxes.detach().cpu().float().numpy().astype(np.float32),
+            mask=self.masks.detach().cpu().numpy().astype(bool),
+            confidence=self.scores.detach().cpu().float().numpy().astype(np.float32),
+            tracker_id=self.object_ids,
+            class_id=self.class_ids,
+            data={"class_name": np.asarray(self.class_names)},
+        )
 
 
 class SAM3Video:
