@@ -17,7 +17,7 @@ class Sam3VideoWrapper(nn.Module):
         text: str | list[str] | None = None,
         dtype=torch.bfloat16,
         state_device="cpu",
-        # video_storage_device="cpu",
+        video_storage_device="cpu",
         memory_window: int = 64,
         image_size: int = 1008,
     ):
@@ -31,7 +31,7 @@ class Sam3VideoWrapper(nn.Module):
         self.state_device = state_device
         self.memory_window = memory_window
         self.image_size = image_size
-        # self.video_storage_device = video_storage_device
+        self.video_storage_device = video_storage_device
 
         # SAM 3's default 1008x1008 input upscales smaller clips and dominates
         # runtime (~quadratic in resolution). ``image_size`` propagates through the
@@ -67,7 +67,7 @@ class Sam3VideoWrapper(nn.Module):
                 dtype=self.dtype,
                 inference_device=self.device,
                 inference_state_device=self.state_device,
-                # video_storage_device=self.video_storage_device,
+                video_storage_device=self.video_storage_device,
             )
         else:
             self.inference_session.reset_state()
@@ -97,6 +97,16 @@ class Sam3VideoWrapper(nn.Module):
         cutoff = frame_idx - self.memory_window
         if cutoff < 0:
             return
+        # The session caches every input frame's pixel_values in ``processed_frames``
+        # and never frees them. Forward streaming never re-reads frames older than the
+        # window, so drop the aged-out ones — keeps the cache bounded (otherwise it
+        # grows one frame per call: on the GPU by default, or host RAM when
+        # ``video_storage_device`` is cpu).
+        frames = self.inference_session.processed_frames
+        if frames is not None:
+            for k in list(frames):
+                if k < cutoff:
+                    del frames[k]
         for obj in self.inference_session.output_dict_per_obj.values():
             non_cond = obj["non_cond_frame_outputs"]
             for k in list(non_cond):

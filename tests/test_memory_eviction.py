@@ -20,11 +20,12 @@ import pytest
 from deeplabsam.segment.sam3video import Sam3VideoWrapper
 
 
-def fake_session(cond_frames, non_cond_frames):
+def fake_session(cond_frames, non_cond_frames, processed_frames=()):
     """A stand-in session with one object's frame-output dicts populated.
 
     Values are sentinels — the eviction logic only looks at the integer frame
-    keys, so this avoids needing real tensors.
+    keys, so this avoids needing real tensors. ``processed_frames`` stands in for
+    the session's per-frame input cache (defaults to empty).
     """
     return types.SimpleNamespace(
         output_dict_per_obj={
@@ -32,7 +33,8 @@ def fake_session(cond_frames, non_cond_frames):
                 "cond_frame_outputs": {f: object() for f in cond_frames},
                 "non_cond_frame_outputs": {f: object() for f in non_cond_frames},
             }
-        }
+        },
+        processed_frames={f: object() for f in processed_frames},
     )
 
 
@@ -63,6 +65,16 @@ def test_keeps_initial_cond_anchor_but_evicts_old_reconditioned():
     cond = session.output_dict_per_obj[0]["cond_frame_outputs"]
     assert 0 in cond  # anchor survives even though 0 < cutoff (model needs it)
     assert 100 not in cond  # aged-out reconditioned cond frame is evicted
+
+
+def test_evicts_old_processed_frames():
+    # The per-frame input cache grows every call; aged-out frames must be dropped
+    # too, or they OOM the GPU (the storage device defaults to the inference one).
+    session = fake_session(cond_frames=[0], non_cond_frames=[199],
+                           processed_frames=range(200))
+    evict(window=64, session=session, frame_idx=199)  # cutoff = 135
+    assert min(session.processed_frames) >= 135
+    assert 199 in session.processed_frames and 134 not in session.processed_frames
 
 
 def test_noop_before_window_filled():
