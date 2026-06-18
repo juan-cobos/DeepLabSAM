@@ -9,11 +9,14 @@ dependencies = [
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
     "python-dotenv>=1.2.2",
-    "supervision>=0.27.0.post2",
+    "supervision==0.29",
     # timm supplies the HRNet backbone for the SuperAnimal DeepLabCut pose heads,
     # built from the bundled configs (no deeplabcut dependency).
     "timm>=1.0.7",
     "torch>=2.12.0",
+    # torchcodec decodes video straight to torch tensors (CHW uint8, RGB) for the
+    # pipeline, replacing the cv2 capture + BGR->RGB->numpy frame iterator.
+    "torchcodec>=0.8.0",
     "torchvision>=0.23.0",
     # [kernels] pulls the compatible kernels range (transformers pins <0.13),
     # enabling SAM 3 mask post-processing (NMS, hole filling, sprinkle removal).
