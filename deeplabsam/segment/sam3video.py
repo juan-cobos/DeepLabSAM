@@ -97,22 +97,11 @@ class Sam3VideoWrapper(nn.Module):
         cutoff = frame_idx - self.memory_window
         if cutoff < 0:
             return
-        # The session caches every input frame's pixel_values in ``processed_frames``
-        # and never frees them. Forward streaming never re-reads frames older than the
-        # window, so drop the aged-out ones — keeps the cache bounded (otherwise it
-        # grows one frame per call: on the GPU by default, or host RAM when
-        # ``video_storage_device`` is cpu).
-        frames = self.inference_session.processed_frames
-        if frames is not None:
-            for k in list(frames):
-                if k < cutoff:
-                    del frames[k]
         for obj in self.inference_session.output_dict_per_obj.values():
             non_cond = obj["non_cond_frame_outputs"]
             for k in list(non_cond):
                 if k < cutoff:
                     del non_cond[k]
-
             # Conditioning frames anchor the memory; the initial one must stay
             # (the model errors if it's gone). Evict only later reconditioned
             # cond frames that have aged out of the window.
