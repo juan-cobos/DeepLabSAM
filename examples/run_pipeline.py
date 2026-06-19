@@ -9,7 +9,7 @@ import sys
 from transformers import Sam3VideoConfig
 
 from deeplabsam.pipeline import Pipeline
-from deeplabsam.pose.dlc import DLCTorchPose
+from deeplabsam.pose.backends.dlc import DLCPoseHead
 from deeplabsam.segment.sam3video import Sam3VideoWrapper
 
 video_path = sys.argv[1]
@@ -20,7 +20,7 @@ config = Sam3VideoConfig.from_pretrained("facebook/sam3")
 config.image_size = 560
 config.score_threshold_detection = 0.5
 predictor = Sam3VideoWrapper(config=config)
-pose_head = DLCTorchPose(super_animal="superanimal_topviewmouse")
+pose_head = DLCPoseHead(super_animal="superanimal_topviewmouse")
 pipe = Pipeline(predictor=predictor, pose_head=pose_head)
 
 output_path = pipe.run(

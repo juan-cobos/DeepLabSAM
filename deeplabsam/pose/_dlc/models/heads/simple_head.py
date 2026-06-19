@@ -13,8 +13,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from deeplabsam.pose.models.heads.base import HEADS, BaseHead
-from deeplabsam.pose.models.predictors import BasePredictor
+from deeplabsam.pose._dlc.models.heads.base import HEADS, BaseHead
+from deeplabsam.pose._dlc.models.predictors import BasePredictor
 
 
 @HEADS.register_module

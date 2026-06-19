@@ -15,8 +15,8 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
-from deeplabsam.pose.models.predictors import BasePredictor
-from deeplabsam.pose.registry import Registry, build_from_cfg
+from deeplabsam.pose._dlc.models.predictors import BasePredictor
+from deeplabsam.pose._dlc.registry import Registry, build_from_cfg
 
 HEADS = Registry("heads", build_func=build_from_cfg)
 

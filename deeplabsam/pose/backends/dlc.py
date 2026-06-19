@@ -1,18 +1,18 @@
-"""Torch DeepLabCut SuperAnimal pose heads — no ``deeplabcut`` install required.
+"""Torch DeepLabCut pose head — no ``deeplabcut`` install required.
 
 Uses the genuine DeepLabCut ``PoseModel`` code, vendored (and trimmed) under
-``deeplabsam.pose``, plus the bundled configs +
-``modelzoo_utils`` to fetch snapshots from the HF Model Zoo. Because it's DLC's
-own model + predictor, the heatmap decode is parity-correct out of the box — no
-need to reverse-engineer it.
+``deeplabsam.pose._dlc``, so the heatmap decode is parity-correct out of the box.
+The default constructor pulls a SuperAnimal model from the HF Model Zoo;
+:meth:`DLCPoseHead.from_dlc_project` builds from an arbitrary DLC-PyTorch config
++ snapshot, so community models (fly, zebrafish, ...) plug in the same way.
 """
 
 import numpy as np
 import torch
 from torchvision.transforms.v2 import functional as TF
 
-from deeplabsam.pose.models import PoseModel
-from deeplabsam.pose.modelzoo_utils import (
+from deeplabsam.pose._dlc.models import PoseModel
+from deeplabsam.pose._dlc.modelzoo_utils import (
     get_super_animal_snapshot_path,
     load_super_animal_config,
 )
@@ -29,7 +29,7 @@ _DEFAULT_POSE_MODEL = {
 }
 
 
-class DLCTorchPose:
+class DLCPoseHead:
     def __init__(
         self,
         super_animal: str = "superanimal_topviewmouse",
@@ -39,10 +39,9 @@ class DLCTorchPose:
     ):
         if device in (None, "auto"):
             device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = device
-        self.super_animal = super_animal
         if model_name is None:
             model_name = _DEFAULT_POSE_MODEL.get(super_animal, "hrnet_w32")
+        self.super_animal = super_animal
         self.model_name = model_name
 
         config = load_super_animal_config(
@@ -51,26 +50,55 @@ class DLCTorchPose:
             detector_name=None,
             device=device,
         )
+        snapshot_path = get_super_animal_snapshot_path(super_animal, model_name)
+        self._init_from_config(config, snapshot_path, device, input_size)
+
+    @classmethod
+    def from_dlc_project(
+        cls,
+        config: dict,
+        snapshot_path,
+        *,
+        device: str | None = None,
+        input_size: int = 256,
+    ) -> "DLCPoseHead":
+        """Build from an arbitrary DLC-PyTorch config + snapshot.
+
+        ``config`` is a loaded DLC pytorch project config (the same shape
+        ``load_super_animal_config`` returns: ``model``/``data``/``metadata``
+        keys); ``snapshot_path`` points at its ``.pt`` checkpoint. This is the
+        entry point for community models beyond the SuperAnimal zoo.
+        """
+        if device in (None, "auto"):
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self = cls.__new__(cls)
+        self.super_animal = None
+        self.model_name = None
+        self._init_from_config(config, snapshot_path, device, input_size)
+        return self
+
+    def _init_from_config(self, config, snapshot_path, device, input_size):
+        self.device = device
         # The backbone's input must be a multiple of its auto-padding divisor
         # (32 for HRNet); ResNet declares none, so it's unconstrained (divisor 1).
         pad = config["data"].get("inference", {}).get("auto_padding", {})
         divisor = max(pad.get("pad_width_divisor", 1), pad.get("pad_height_divisor", 1))
         if input_size % divisor != 0:
             raise ValueError(
-                f"input_size must be divisible by {divisor} for {model_name}, "
-                f"got {input_size}"
+                f"input_size must be divisible by {divisor}, got {input_size}"
             )
         self.input_size = input_size
         self.bodyparts = list(config["metadata"]["bodyparts"])
         self.num_bodyparts = len(self.bodyparts)
 
         self.model = PoseModel.build(config["model"])
-        path = get_super_animal_snapshot_path(super_animal, model_name)
-        state = torch.load(path, map_location="cpu", weights_only=False)["model"]
+        state = torch.load(snapshot_path, map_location="cpu", weights_only=False)[
+            "model"
+        ]
         missing, unexpected = self.model.load_state_dict(state, strict=False)
         if missing or unexpected:
             raise RuntimeError(
-                f"{super_animal} load mismatch: missing={missing} unexpected={unexpected}"
+                f"DLC snapshot load mismatch: missing={missing} unexpected={unexpected}"
             )
 
         self.model = self.model.to(device).eval()
@@ -101,7 +129,7 @@ class DLCTorchPose:
     @torch.no_grad()
     def predict_tensor(
         self,
-        image: torch.Tensor,
+        images: torch.Tensor,
         boxes: np.ndarray | torch.Tensor,
         masks: np.ndarray | torch.Tensor | None = None,
     ) -> np.ndarray:
@@ -113,8 +141,10 @@ class DLCTorchPose:
         comes back — no cv2, no per-crop host round-trip.
 
         Args:
-            image: full frame as a ``(3, H, W)`` (or ``(H, W, 3)``) uint8/float
-                tensor; moved to the model device and scaled to ``[0, 1]``.
+            images: a single frame ``(3, H, W)`` (or ``(H, W, 3)``) uint8/float
+                tensor — this backend poses one frame at a time; the plural name
+                matches the ``PoseHead`` contract. Moved to device, scaled to
+                ``[0, 1]``.
             boxes: ``(N, 4)`` xyxy tensor in image pixel coords.
             masks: optional ``(N, H, W)`` per-instance masks aligned with ``boxes``.
                 When given, each crop is multiplied by its mask *after*
@@ -125,9 +155,9 @@ class DLCTorchPose:
         Returns:
             (N, K, 3) array of (x, y, confidence) in original image coords.
         """
-        if image.ndim == 3 and image.shape[0] != 3 and image.shape[-1] == 3:
-            image = image.permute(2, 0, 1)  # HWC -> CHW
-        image = TF.to_dtype(image.to(self.device), torch.float32, scale=True)
+        if images.ndim == 3 and images.shape[0] != 3 and images.shape[-1] == 3:
+            images = images.permute(2, 0, 1)  # HWC -> CHW
+        images = TF.to_dtype(images.to(self.device), torch.float32, scale=True)
         boxes = torch.as_tensor(boxes, device=self.device).float().reshape(-1, 4)
         N = boxes.shape[0]
         if N == 0:
@@ -135,7 +165,7 @@ class DLCTorchPose:
         if masks is not None:
             masks = torch.as_tensor(masks, device=self.device).float()
 
-        H, W = image.shape[-2:]
+        H, W = images.shape[-2:]
         size = self.input_size
         crops, mask_crops, tfs, valid = [], [], [], []
         for i, (x1, y1, x2, y2) in enumerate(boxes.round().to(torch.int64).tolist()):
@@ -151,7 +181,7 @@ class DLCTorchPose:
             # crop the box and aspect-preserving resize in one op, then center-pad
             # to a square SxS canvas ([left, top, right, bottom] padding).
             resized = TF.resized_crop(
-                image, y1, x1, ch, cw, [new_h, new_w], antialias=True
+                images, y1, x1, ch, cw, [new_h, new_w], antialias=True
             )
             crops.append(TF.pad(resized, pad))
             if masks is not None:
@@ -203,7 +233,7 @@ class DLCTorchPose:
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     super_animal = "superanimal_topviewmouse"
-    head = DLCTorchPose(super_animal=super_animal, device=device)
+    head = DLCPoseHead(super_animal=super_animal, device=device)
     print(
         f"Superanimal {super_animal}: {head.num_bodyparts} bodyparts ({head.model_name}) on {device}"
     )

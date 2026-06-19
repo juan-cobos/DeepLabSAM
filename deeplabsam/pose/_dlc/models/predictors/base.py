@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch import nn
 
-from deeplabsam.pose.registry import Registry, build_from_cfg
+from deeplabsam.pose._dlc.registry import Registry, build_from_cfg
 
 PREDICTORS = Registry("predictors", build_func=build_from_cfg)
 

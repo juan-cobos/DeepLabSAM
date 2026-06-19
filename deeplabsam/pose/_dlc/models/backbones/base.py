@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
 
-from deeplabsam.pose.registry import Registry, build_from_cfg
+from deeplabsam.pose._dlc.registry import Registry, build_from_cfg
 
 BACKBONES = Registry("backbones", build_func=build_from_cfg)
 

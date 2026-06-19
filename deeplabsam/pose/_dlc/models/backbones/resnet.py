@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 from torchvision.transforms.functional import resize
 
-from deeplabsam.pose.models.backbones.base import (
+from deeplabsam.pose._dlc.models.backbones.base import (
     BACKBONES,
     BaseBackbone,
 )
@@ -68,7 +68,7 @@ class ResNet(BaseBackbone):
             torch.Tensor: Output tensor.
         Example:
             >>> import torch
-            >>> from deeplabsam.pose.models.backbones import ResNet
+            >>> from deeplabsam.pose._dlc.models.backbones import ResNet
             >>> backbone = ResNet(model_name='resnet50', pretrained=False)
             >>> x = torch.randn(1, 3, 256, 256)
             >>> y = backbone(x)

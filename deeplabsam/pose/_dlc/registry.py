@@ -30,7 +30,7 @@ def build_from_cfg(
         Any: The constructed object.
 
     Example:
-        >>> from deeplabsam.pose.registry import Registry, build_from_cfg
+        >>> from deeplabsam.pose._dlc.registry import Registry, build_from_cfg
         >>> class Model:
         >>>     def __init__(self, param):
         >>>         self.param = param
@@ -186,7 +186,7 @@ class Registry:
             class: The corresponding class.
 
         Example:
-            >>> from deeplabsam.pose.registry import Registry
+            >>> from deeplabsam.pose._dlc.registry import Registry
             >>> registry = Registry("models")
             >>> class Model:
             >>>     pass
@@ -220,7 +220,7 @@ class Registry:
             Any: The constructed object.
 
         Example:
-            >>> from deeplabsam.pose.registry import Registry, build_from_cfg
+            >>> from deeplabsam.pose._dlc.registry import Registry, build_from_cfg
             >>> class Model:
             >>>     def __init__(self, param):
             >>>         self.param = param
@@ -243,7 +243,7 @@ class Registry:
             None
 
         Example:
-            >>> from deeplabsam.pose.registry import Registry
+            >>> from deeplabsam.pose._dlc.registry import Registry
             >>> models = Registry('models')
             >>> mmdet_models = Registry('models', parent=models)
             >>> class Model:
@@ -273,7 +273,7 @@ class Registry:
             None
 
         Example:
-            >>> from deeplabsam.pose.registry import Registry
+            >>> from deeplabsam.pose._dlc.registry import Registry
             >>> registry = Registry("models")
             >>> class Model:
             >>>     pass
@@ -306,7 +306,7 @@ class Registry:
             type: The input class.
 
         Example:
-            >>> from deeplabsam.pose.registry import Registry
+            >>> from deeplabsam.pose._dlc.registry import Registry
             >>> registry = Registry("models")
             >>> @registry.deprecated_register_module()
             >>> class Model:

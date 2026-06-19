@@ -9,7 +9,8 @@ from torchcodec.decoders import VideoDecoder
 from tqdm import tqdm
 from transformers import Sam3VideoConfig
 
-from deeplabsam.pose.dlc import DLCTorchPose
+from deeplabsam.pose import PoseHead
+from deeplabsam.pose.backends.dlc import DLCPoseHead
 from deeplabsam.segment.sam3video import Sam3VideoWrapper
 
 # A prompt that *contains* one of these (case-insensitive substring, so
@@ -28,7 +29,7 @@ class Pipeline:
     session, so one pipeline processes many videos without reloading the models.
     """
 
-    def __init__(self, predictor: Sam3VideoWrapper, pose_head: DLCTorchPose):
+    def __init__(self, predictor: Sam3VideoWrapper, pose_head: PoseHead):
         # TF32 speeds the fp32 pose matmuls at no memory cost. (cuDNN benchmark
         # was tried and dropped: it ~tripled peak VRAM for no gain, since pose is
         # only ~7% of runtime — SAM 3's forward dominates.)
@@ -57,7 +58,7 @@ class Pipeline:
         config.image_size = image_size
         return cls(
             Sam3VideoWrapper(config=config),
-            DLCTorchPose(super_animal=super_animal, device=device),
+            DLCPoseHead(super_animal=super_animal, device=device),
         )
 
     def run(

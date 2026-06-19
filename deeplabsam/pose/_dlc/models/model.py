@@ -15,9 +15,9 @@ import copy
 import torch
 import torch.nn as nn
 
-from deeplabsam.pose.models.backbones import BACKBONES, BaseBackbone
-from deeplabsam.pose.models.heads import HEADS, BaseHead
-from deeplabsam.pose.models.predictors import PREDICTORS
+from deeplabsam.pose._dlc.models.backbones import BACKBONES, BaseBackbone
+from deeplabsam.pose._dlc.models.heads import HEADS, BaseHead
+from deeplabsam.pose._dlc.models.predictors import PREDICTORS
 
 
 class PoseModel(nn.Module):
@@ -104,7 +104,7 @@ class PoseModel(nn.Module):
         Training-only pieces (criterion / loss aggregator / target generator)
         are not built — their config keys are ignored by the head constructors.
         Weights are loaded separately by the caller via ``load_state_dict``
-        (see ``DLCTorchPose``).
+        (see ``DLCPoseHead``).
 
         Args:
             cfg: The configuration of the model to build.

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import torch
 
-from deeplabsam.pose.models.predictors.base import (
+from deeplabsam.pose._dlc.models.predictors.base import (
     PREDICTORS,
     BasePredictor,
 )
