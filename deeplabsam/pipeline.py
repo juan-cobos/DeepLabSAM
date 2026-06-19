@@ -70,6 +70,7 @@ class Pipeline:
         name_suffix: str = "_annotated",
         keypoint_threshold: float = 0.3,
         nms_threshold: float = 0.5,
+        class_agnostic: bool = False,
         export_json: bool = True,
     ) -> Path:
         """Run ``video_path`` through detect+track+pose, write an annotated mp4.
@@ -134,11 +135,10 @@ class Pipeline:
                 if len(det) == 0:
                     writer.write(annotated)
                     continue
-                # Class-agnostic so cross-prompt duplicates (one animal matched by
-                # both "mouse" and "rat") collapse to one. NMS reorders/filters, so
-                # ``det`` is the single source of truth from here on — read the
-                # prompt back from the class_name it carries, not from ``result``.
-                det = det.with_nms(threshold=nms_threshold, class_agnostic=True)
+
+                det = det.with_nms(
+                    threshold=nms_threshold, class_agnostic=class_agnostic
+                )
                 class_names = list(det.data["class_name"])
 
                 # Per-detection prompt splits animals (pose targets) from objects
