@@ -11,22 +11,10 @@ from tqdm import tqdm
 from deeplabsam.pose.dlc import DLCTorchPose
 from deeplabsam.segment.sam3video import Sam3VideoWrapper
 
-
-def outputs_to_detections(result: dict) -> sv.Detections:
-    """Sam3VideoWrapper output dict -> numpy ``sv.Detections`` for annotation/JSON.
-
-    Carries boxes, masks, confidences and ``tracker_id`` (object IDs). This is the
-    only place the GPU tensors are moved to the CPU.
-    """
-    object_ids = result["object_ids"].detach().cpu().numpy().astype(int)
-    if len(object_ids) == 0:
-        return sv.Detections.empty()
-    return sv.Detections(
-        xyxy=result["boxes"].detach().cpu().float().numpy().astype(np.float32),
-        mask=result["masks"].detach().cpu().numpy().astype(bool),
-        confidence=result["scores"].detach().cpu().float().numpy().astype(np.float32),
-        tracker_id=object_ids,
-    )
+# A prompt that *contains* one of these (case-insensitive substring, so
+# "black mouse" matches) gets DLC pose; any other prompt (e.g. "object") is
+# tracked/masked only, so pose is never fitted onto an object.
+SUPPORTED_ANIMALS = frozenset({"mouse", "mice", "animal"})
 
 
 class Pipeline:
@@ -66,11 +54,18 @@ class Pipeline:
     ) -> Path:
         """Run ``video_path`` through detect+track+pose, write an annotated mp4.
 
+        ``text`` is the full prompt set — pass animals and objects together, e.g.
+        ``["mouse", "object"]``. Detections whose prompt is in ``SUPPORTED_ANIMALS``
+        are run through DLC pose; any other prompt (the object) is tracked/masked
+        only, so pose is never fitted onto an object and downstream code can still
+        quantify animal-object interaction from the object masks.
+
         The output is named after the input video (``<stem><name_suffix>.mp4``)
         and written into ``output_dir``, which is created if needed. When
         ``export_json`` is set, per-frame detections (boxes, scores, track + class
-        ids, each tagged with its frame index) are also written to a sibling
-        ``<stem><name_suffix>.json`` via ``sv.JSONSink``. Returns the mp4 path.
+        ids, each tagged with its frame index and prompt ``class_name``) are also
+        written to a sibling ``<stem><name_suffix>.json`` via ``sv.JSONSink``.
+        Returns the mp4 path.
         """
         # Fresh tracking session for this video (model weights stay loaded).
         predictor = self.predictor.reset(text)
@@ -109,15 +104,33 @@ class Pipeline:
                 # The annotators draw on a BGR numpy view — the one conversion
                 # cv2's writer actually needs.
                 result = predictor(frame)
-                det = outputs_to_detections(result)
+                det = result.to_detections()  # carries class_id + data["class_name"]
                 annotated = cv2.cvtColor(frame.cpu().numpy(), cv2.COLOR_RGB2BGR)
                 if len(det) == 0:
                     writer.write(annotated)
                     continue
 
-                kpts = self.pose_head.predict_tensor(
-                    frame, result["boxes"], result["masks"]
+                # Per-detection prompt splits animals (pose targets) from objects
+                # (mask/track only). Boolean over detection order.
+                is_animal = np.array(
+                    [
+                        any(a in p.lower() for a in SUPPORTED_ANIMALS)
+                        for p in result.prompts
+                    ]
                 )
+
+                # Pose runs only on animal detections; object masks pass through
+                # untouched. Keypoints are scattered back into full detection order
+                # so JSON/annotation stay aligned (objects keep all-zero, hence
+                # not-visible, keypoints).
+                kpts = np.zeros(
+                    (len(det), self.pose_head.num_bodyparts, 3), dtype=np.float32
+                )
+                if is_animal.any():
+                    sel = torch.from_numpy(is_animal).to(result.boxes.device)
+                    kpts[is_animal] = self.pose_head.predict_tensor(
+                        frame, result.boxes[sel], result.masks[sel]
+                    )
                 conf = kpts[:, :, 2]
                 # `visible` skips sub-threshold vertices in the annotator.
                 keypoints = sv.KeyPoints(
@@ -126,8 +139,8 @@ class Pipeline:
                     visible=conf >= keypoint_threshold,
                 )
                 if export_json:
-                    # kpts (N, K, 3) as a length-N list -> sink slices one
-                    # (x, y, conf) keypoint set per detection.
+                    # det carries boxes/scores/ids/class_name; kpts (N, K, 3) as a
+                    # length-N list rides in custom_data, sliced per detection.
                     sink.append(
                         det,
                         custom_data={
@@ -137,14 +150,11 @@ class Pipeline:
                     )
                 annotated = mask_annot.annotate(annotated, det)
                 annotated = box_annot.annotate(annotated, det)
-                # Per-object class = the prompt that found it (handles >1 prompt;
-                # with a single prompt every label is just "<prompt> #<id>").
-                obj_to_prompt = {
-                    oid: p
-                    for p, oids in result["prompt_to_obj_ids"].items()
-                    for oid in oids
-                }
-                labels = [f"{obj_to_prompt[int(tid)]} #{tid}" for tid in det.tracker_id]
+                # With one prompt every label is just "<prompt> #<id>"; with
+                # [animal, object] prompts each detection shows its own class.
+                labels = [
+                    f"{p} #{tid}" for p, tid in zip(result.prompts, det.tracker_id)
+                ]
                 annotated = label_annot.annotate(annotated, det, labels=labels)
                 annotated = vertex_annot.annotate(annotated, keypoints)
                 writer.write(annotated)
