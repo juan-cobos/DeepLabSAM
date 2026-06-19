@@ -50,6 +50,7 @@ class Pipeline:
         output_dir: str | Path = "outputs",
         name_suffix: str = "_annotated",
         keypoint_threshold: float = 0.3,
+        nms_threshold: float = 0.5,
         export_json: bool = True,
     ) -> Path:
         """Run ``video_path`` through detect+track+pose, write an annotated mp4.
@@ -59,6 +60,11 @@ class Pipeline:
         are run through DLC pose; any other prompt (the object) is tracked/masked
         only, so pose is never fitted onto an object and downstream code can still
         quantify animal-object interaction from the object masks.
+
+        ``nms_threshold`` applies class-agnostic non-max suppression per frame:
+        with overlapping prompts (e.g. ``["mouse", "rat"]``) the same animal can be
+        matched by both, so duplicates with box IoU above this threshold are
+        dropped, keeping the higher-confidence detection.
 
         The output is named after the input video (``<stem><name_suffix>.mp4``)
         and written into ``output_dir``, which is created if needed. When
@@ -109,13 +115,19 @@ class Pipeline:
                 if len(det) == 0:
                     writer.write(annotated)
                     continue
+                # Class-agnostic so cross-prompt duplicates (one animal matched by
+                # both "mouse" and "rat") collapse to one. NMS reorders/filters, so
+                # ``det`` is the single source of truth from here on — read the
+                # prompt back from the class_name it carries, not from ``result``.
+                det = det.with_nms(threshold=nms_threshold, class_agnostic=True)
+                class_names = list(det.data["class_name"])
 
                 # Per-detection prompt splits animals (pose targets) from objects
                 # (mask/track only). Boolean over detection order.
                 is_animal = np.array(
                     [
                         any(a in p.lower() for a in SUPPORTED_ANIMALS)
-                        for p in result.prompts
+                        for p in class_names
                     ]
                 )
 
@@ -127,9 +139,8 @@ class Pipeline:
                     (len(det), self.pose_head.num_bodyparts, 3), dtype=np.float32
                 )
                 if is_animal.any():
-                    sel = torch.from_numpy(is_animal).to(result.boxes.device)
                     kpts[is_animal] = self.pose_head.predict_tensor(
-                        frame, result.boxes[sel], result.masks[sel]
+                        frame, det.xyxy[is_animal], det.mask[is_animal]
                     )
                 conf = kpts[:, :, 2]
                 # `visible` skips sub-threshold vertices in the annotator.
@@ -153,7 +164,7 @@ class Pipeline:
                 # With one prompt every label is just "<prompt> #<id>"; with
                 # [animal, object] prompts each detection shows its own class.
                 labels = [
-                    f"{p} #{tid}" for p, tid in zip(result.prompts, det.tracker_id)
+                    f"{p} #{tid}" for p, tid in zip(class_names, det.tracker_id)
                 ]
                 annotated = label_annot.annotate(annotated, det, labels=labels)
                 annotated = vertex_annot.annotate(annotated, keypoints)
