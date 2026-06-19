@@ -7,6 +7,7 @@ import supervision as sv
 import torch
 from torchcodec.decoders import VideoDecoder
 from tqdm import tqdm
+from transformers import Sam3VideoConfig
 
 from deeplabsam.pose.dlc import DLCTorchPose
 from deeplabsam.segment.sam3video import Sam3VideoWrapper
@@ -20,27 +21,44 @@ SUPPORTED_ANIMALS = frozenset({"mouse", "mice", "animal"})
 class Pipeline:
     """SAM 3 video (HF, detect + track) + DeepLabCut pose, end to end.
 
-    Both models load once here; each :meth:`run` calls ``predictor.reset(text)`` to
-    start a fresh tracking session, so one pipeline processes many videos without
-    reloading SAM 3. ``device`` and ``super_animal`` default to auto-CUDA and the
-    top-view mouse head.
+    Takes an already-built segmentation ``predictor`` and ``pose_head``, so all
+    model configuration (SAM 3 ``config``, pose ``super_animal``/``device``) lives
+    where those components are constructed — the pipeline just wires them together.
+    Each :meth:`run` calls ``predictor.reset(text)`` to start a fresh tracking
+    session, so one pipeline processes many videos without reloading the models.
     """
 
-    def __init__(
-        self,
-        device: str | None = None,
-        super_animal: str = "superanimal_topviewmouse",
-        image_size: int = 1008,
-    ):
+    def __init__(self, predictor: Sam3VideoWrapper, pose_head: DLCTorchPose):
         # TF32 speeds the fp32 pose matmuls at no memory cost. (cuDNN benchmark
         # was tried and dropped: it ~tripled peak VRAM for no gain, since pose is
         # only ~7% of runtime — SAM 3's forward dominates.)
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
-        # SAM 3's forward scales ~quadratically with input resolution; drop
-        # image_size below the 1008 default to trade accuracy for speed.
-        self.predictor = Sam3VideoWrapper(image_size=image_size).eval()
-        self.pose_head = DLCTorchPose(super_animal=super_animal, device=device)
+        self.predictor = predictor.eval()
+        self.pose_head = pose_head
+
+    @classmethod
+    def default(
+        cls,
+        *,
+        image_size: int = 1008,
+        super_animal: str = "superanimal_topviewmouse",
+        device: str | None = None,
+    ) -> "Pipeline":
+        """Build a standard pipeline without hand-wiring the components.
+
+        Convenience for the common case: a SAM 3 wrapper at the given
+        ``image_size`` (the speed/accuracy knob) and a DLC pose head for
+        ``super_animal``. Drop below 1008 to trade accuracy for speed. For
+        anything else (custom config, swapped pose backend, test fakes),
+        construct ``predictor``/``pose_head`` yourself and call ``Pipeline(...)``.
+        """
+        config = Sam3VideoConfig.from_pretrained("facebook/sam3")
+        config.image_size = image_size
+        return cls(
+            Sam3VideoWrapper(config=config),
+            DLCTorchPose(super_animal=super_animal, device=device),
+        )
 
     def run(
         self,
@@ -163,9 +181,7 @@ class Pipeline:
                 annotated = box_annot.annotate(annotated, det)
                 # With one prompt every label is just "<prompt> #<id>"; with
                 # [animal, object] prompts each detection shows its own class.
-                labels = [
-                    f"{p} #{tid}" for p, tid in zip(class_names, det.tracker_id)
-                ]
+                labels = [f"{p} #{tid}" for p, tid in zip(class_names, det.tracker_id)]
                 annotated = label_annot.annotate(annotated, det, labels=labels)
                 annotated = vertex_annot.annotate(annotated, keypoints)
                 writer.write(annotated)
@@ -178,8 +194,8 @@ class Pipeline:
 if __name__ == "__main__":
     from time import perf_counter
 
-    max_frames = 1000
-    pipe = Pipeline()
+    max_frames = 10
+    pipe = Pipeline.default()
 
     t0 = perf_counter()
     pipe.run(

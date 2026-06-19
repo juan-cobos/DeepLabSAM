@@ -75,11 +75,11 @@ class Sam3VideoWrapper(nn.Module):
     def __init__(
         self,
         text: str | list[str] | None = None,
+        config: Sam3VideoConfig | None = None,
         dtype=torch.bfloat16,
         state_device="cpu",
         video_storage_device="cpu",
         memory_window: int = 64,
-        image_size: int = 1008,
     ):
         super().__init__()
 
@@ -90,23 +90,24 @@ class Sam3VideoWrapper(nn.Module):
         self.dtype = dtype
         self.state_device = state_device
         self.memory_window = memory_window
-        self.image_size = image_size
         self.video_storage_device = video_storage_device
 
-        # SAM 3's default 1008x1008 input upscales smaller clips and dominates
-        # runtime (~quadratic in resolution). ``image_size`` propagates through the
-        # nested detector/tracker configs; pretrained weights load fine at smaller
-        # sizes (pos-encodings interpolate), so this is a direct speed/accuracy knob.
-        config = Sam3VideoConfig.from_pretrained("facebook/sam3")
-        config.image_size = image_size
+        # Default to SAM 3's stock config. Pass a ``Sam3VideoConfig`` to tune model
+        # knobs without the wrapper hardcoding any: ``image_size`` (input res — a
+        # speed/accuracy knob, since the forward scales ~quadratically with it) and
+        # the detection thresholds (``score_threshold_detection``, ...) all live
+        # there.
+        config = config or Sam3VideoConfig.from_pretrained("facebook/sam3")
+        self.image_size = config.image_size
         self.model = Sam3VideoModel.from_pretrained(
             "facebook/sam3", config=config, dtype=self.dtype
         ).to(self.device)
         # The processor is device/dtype-agnostic at load time; it takes the device
-        # per call (see ``forward``), so no device_map here. Match its resize target
-        # to the model input so frames aren't sent through at the wrong resolution.
+        # per call (see ``forward``), so no device_map here. Its resize target must
+        # match the model input, so derive it from ``config.image_size`` (the single
+        # source of truth) rather than carrying a second hardcoded value.
         self.processor = Sam3VideoProcessor.from_pretrained("facebook/sam3")
-        size = {"height": image_size, "width": image_size}
+        size = {"height": self.image_size, "width": self.image_size}
         self.processor.image_processor.size = size
         self.processor.video_processor.size = size
         self.inference_session = None
