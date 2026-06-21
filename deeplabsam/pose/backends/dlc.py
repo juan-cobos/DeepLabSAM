@@ -1,11 +1,4 @@
-"""Torch DeepLabCut pose head — no ``deeplabcut`` install required.
-
-Uses the genuine DeepLabCut ``PoseModel`` code, vendored (and trimmed) under
-``deeplabsam.pose._dlc``, so the heatmap decode is parity-correct out of the box.
-The default constructor pulls a SuperAnimal model from the HF Model Zoo;
-:meth:`DLCPoseHead.from_dlc_project` builds from an arbitrary DLC-PyTorch config
-+ snapshot, so community models (fly, zebrafish, ...) plug in the same way.
-"""
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -15,6 +8,7 @@ from deeplabsam.pose._dlc.models import PoseModel
 from deeplabsam.pose._dlc.modelzoo_utils import (
     get_super_animal_snapshot_path,
     load_super_animal_config,
+    read_config_as_dict,
 )
 
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -56,7 +50,7 @@ class DLCPoseHead:
     @classmethod
     def from_dlc_project(
         cls,
-        config: dict,
+        config: dict | str | Path,
         snapshot_path,
         *,
         device: str | None = None,
@@ -64,11 +58,14 @@ class DLCPoseHead:
     ) -> "DLCPoseHead":
         """Build from an arbitrary DLC-PyTorch config + snapshot.
 
-        ``config`` is a loaded DLC pytorch project config (the same shape
-        ``load_super_animal_config`` returns: ``model``/``data``/``metadata``
-        keys); ``snapshot_path`` points at its ``.pt`` checkpoint. This is the
-        entry point for community models beyond the SuperAnimal zoo.
+        ``config`` is either a path to the project's ``pytorch_config.yaml`` (a
+        ``str``/``os.PathLike``, read here) or an already-loaded config dict —
+        the same shape ``load_super_animal_config`` returns (``model``/``data``/
+        ``metadata`` keys). ``snapshot_path`` points at its ``.pt`` checkpoint.
+        This is the entry point for community models beyond the SuperAnimal zoo.
         """
+        if isinstance(config, (str, Path)):
+            config = read_config_as_dict(config)
         if device in (None, "auto"):
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self = cls.__new__(cls)
