@@ -18,12 +18,14 @@ dependencies = [
     # pipeline, replacing the cv2 capture + BGR->RGB->numpy frame iterator.
     "torchcodec>=0.8.0",
     "torchvision>=0.23.0",
+    "typer>=0.12",
     # [kernels] pulls the compatible kernels range (transformers pins <0.13),
     # enabling SAM 3 mask post-processing (NMS, hole filling, sprinkle removal).
     "transformers[kernels]>=5.10.2",
 ]
 
-# [project.scripts]  # TODO: re-add when CLI is migrated
+[project.scripts]
+deeplabsam = "deeplabsam.cli:main"
 
 [build-system]
 requires = ["hatchling"]

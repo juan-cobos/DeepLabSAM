@@ -305,6 +305,7 @@ dependencies = [
     { name = "torchcodec" },
     { name = "torchvision" },
     { name = "transformers", extra = ["kernels"] },
+    { name = "typer" },
 ]
 
 [package.dev-dependencies]
@@ -324,6 +325,7 @@ requires-dist = [
     { name = "torchcodec", specifier = ">=0.8.0" },
     { name = "torchvision", specifier = ">=0.23.0" },
     { name = "transformers", extras = ["kernels"], specifier = ">=5.10.2" },
+    { name = "typer", specifier = ">=0.12" },
 ]
 
 [package.metadata.requires-dev]
