@@ -9,6 +9,8 @@ wheels/
 # Virtual environments
 .venv
 .env
+.python-version
+uv.lock
 
 *.zip
 scripts/
