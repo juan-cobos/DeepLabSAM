@@ -128,6 +128,17 @@ class Pipeline:
         vertex_annot = sv.VertexAnnotator(color=sv.Color.RED, radius=3)
         sink = sv.JSONSink(str(json_path)) if export_json else contextlib.nullcontext()
 
+        # SAM 3's pre-NMS object ids leave holes (e.g. 0, 1, 3) in the labels and
+        # TRACK-keyed colors when NMS suppresses a tracklet every frame. Remap
+        # survivors to contiguous display ids, first-seen order; reset per video.
+        display_ids: dict[int, int] = {}
+
+        def to_display_ids(raw_ids: np.ndarray) -> np.ndarray:
+            return np.array(
+                [display_ids.setdefault(int(r), len(display_ids)) for r in raw_ids],
+                dtype=int,
+            )
+
         with sink:
             for frame_idx, frame in enumerate(tqdm(decoder, total=total)):
                 if max_frames and frame_idx >= max_frames:
@@ -147,6 +158,8 @@ class Pipeline:
                 det = det.with_nms(
                     threshold=nms_threshold, class_agnostic=class_agnostic
                 )
+                # Contiguous display ids so labels/colors skip NMS's id holes.
+                det.tracker_id = to_display_ids(det.tracker_id)
                 class_names = list(det.data["class_name"])
 
                 # Per-detection prompt splits animals (pose targets) from objects
