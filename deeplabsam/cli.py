@@ -3,7 +3,7 @@
 Exposes every knob of the end-to-end run — the SAM 3 video model build
 (``image_size``, detection threshold, memory window), the DLC pose head
 (``super_animal``, pose model, device, crop size) and the per-run options
-(prompts, frame cap, output, thresholds, JSON export) — as flags, so a full run
+(prompts, frame cap, output, thresholds, JSON export, mask dump) — as flags, so a full run
 is one command:
 
     deeplabsam video.mp4 --text mouse --image-size 1008 --max-frames 100
@@ -64,6 +64,13 @@ def run(
     export_json: Annotated[
         bool, typer.Option(help="Also write per-frame detections + keypoints JSON.")
     ] = True,
+    save_masks: Annotated[
+        bool,
+        typer.Option(
+            help="Also dump each frame's masks as .npy into a per-video "
+            "<output-dir>/<video-stem>_masks folder."
+        ),
+    ] = False,
     # --- SAM 3 video model build ---------------------------------------------
     image_size: Annotated[
         int,
@@ -130,6 +137,7 @@ def run(
         nms_threshold=nms_threshold,
         class_agnostic=class_agnostic,
         export_json=export_json,
+        save_masks=save_masks,
     )
     typer.echo(f"Done. Annotated video written to {output_path}")
 

@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from functools import cached_property
+from pathlib import Path
 
 import numpy as np
 import supervision as sv
@@ -69,6 +70,29 @@ class SegmentResult:
             class_id=np.array([class_index[p] for p in prompts], dtype=int),
             data={"class_name": np.array(prompts, dtype=object)},
         )
+
+    def save_masks(
+        self,
+        output_dir: str | Path,
+        name: str | None = None,
+        frame_idx: int | None = None,
+    ) -> Path:
+        """Save this frame's masks as a single ``.npy`` into ``output_dir``.
+
+        Masks are written as one ``(N, H, W)`` bool array, aligned to
+        ``object_ids`` order. ``name`` defaults to a zero-padded ``frame_idx``
+        suffix (so frames sort in order on disk); pass ``name`` to override.
+        ``output_dir`` is the masks folder itself — give each video its own (e.g.
+        a per-video subfolder) so frames don't overwrite across runs. Returns the
+        written path.
+        """
+        masks_dir = Path(output_dir)
+        masks_dir.mkdir(parents=True, exist_ok=True)
+        if name is None:
+            name = f"frame_{frame_idx:05d}" if frame_idx is not None else "masks"
+        path = masks_dir / f"{name}.npy"
+        np.save(path, self.masks.detach().cpu().numpy().astype(bool))
+        return path
 
 
 class Sam3VideoWrapper(nn.Module):

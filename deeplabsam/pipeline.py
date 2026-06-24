@@ -63,7 +63,7 @@ class Pipeline:
 
     def run(
         self,
-        video_path: str,
+        video_path: str | Path,
         text: str | list[str] = "mouse",
         max_frames: int | None = None,
         output_dir: str | Path = "outputs",
@@ -72,6 +72,7 @@ class Pipeline:
         nms_threshold: float = 0.5,
         class_agnostic: bool = False,
         export_json: bool = True,
+        save_masks: bool = False,
     ) -> Path:
         """Run ``video_path`` through detect+track+pose, write an annotated mp4.
 
@@ -91,6 +92,9 @@ class Pipeline:
         ``export_json`` is set, per-frame detections (boxes, scores, track + class
         ids, each tagged with its frame index and prompt ``class_name``) are also
         written to a sibling ``<stem><name_suffix>.json`` via ``sv.JSONSink``.
+        When ``save_masks`` is set, each frame's raw masks are also dumped as
+        ``(N, H, W)`` bool ``.npy`` arrays into a per-video
+        ``<output_dir>/<stem>_masks`` folder.
         Returns the mp4 path.
         """
         # Fresh tracking session for this video (model weights stay loaded).
@@ -108,10 +112,12 @@ class Pipeline:
         if max_frames:
             total = min(total, max_frames) if total else max_frames
 
+        video_path = Path(video_path)
         output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{Path(video_path).stem}{name_suffix}.mp4"
+        output_path = output_dir / f"{video_path.stem}{name_suffix}.mp4"
         json_path = output_path.with_suffix(".json")
+        masks_dir = output_dir / f"{video_path.stem}_masks"
 
         writer = cv2.VideoWriter(
             str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), frame_rate, (W, H)
@@ -130,6 +136,8 @@ class Pipeline:
                 # The annotators draw on a BGR numpy view — the one conversion
                 # cv2's writer actually needs.
                 result = predictor(frame)
+                if save_masks:
+                    result.save_masks(masks_dir, frame_idx=frame_idx)
                 det = result.to_detections()  # carries class_id + data["class_name"]
                 annotated = cv2.cvtColor(frame.cpu().numpy(), cv2.COLOR_RGB2BGR)
                 if len(det) == 0:
