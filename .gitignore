@@ -10,8 +10,7 @@ wheels/
 .venv
 .env
 
-
-dlc/
 *.zip
 scripts/
 outputs/
+checkpoints/
