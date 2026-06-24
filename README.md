@@ -138,7 +138,7 @@ out = pipe.run(
     max_frames=None,        # cap frames for a quick test
     keypoint_threshold=0.3, # hide low-confidence keypoints
     export_json=True,       # also write <video-stem>_annotated.json
-    save_masks=False,       # dump per-frame masks to outputs/<stem>_masks/*.npy
+    save_masks=False,       # dump per-frame masks to outputs/<stem>_masks/*.npz
 )
 print(out)  # outputs/recording_annotated.mp4
 ```
@@ -174,7 +174,7 @@ pipe = Pipeline(
 | `nms_threshold` | `0.5` | Per-frame box-IoU threshold for dropping duplicate detections. |
 | `class_agnostic` | `False` | Run NMS across classes (drop overlaps regardless of prompt). |
 | `export_json` | `True` | Write per-frame detections to a sibling `.json`. |
-| `save_masks` | `False` | Dump each frame's masks as `.npy` into a per-video `<output_dir>/<stem>_masks` folder. |
+| `save_masks` | `False` | Dump each frame's masks as compressed `.npz` into a per-video `<output_dir>/<stem>_masks` folder. |
 
 ---
 
@@ -194,13 +194,13 @@ pipe = Pipeline(
   ```
 
   `class_name` is the text prompt that matched the detection (e.g. `"mice"`), and
-  `class_id` is its stable index across the prompt set. Masks are intentionally
-  not serialized — they'd bloat the file.
+  `class_id` is its stable index across the prompt set.
 
-- **`<stem>_masks/frame_<idx>.npy`** *(with `--save-masks` / `save_masks=True`)*
-  — each frame's masks as a single `(N, H, W)` bool array, aligned to detection
-  order, in a per-video folder named after the input video so runs into the same
-  `output_dir` don't overwrite each other.
+- **`<stem>_masks/frame_<idx>.npz`** *(with `--save-masks` / `save_masks=True`)*
+  — each frame's masks as a compressed `(N, H, W)` bool array under the `masks`
+  key (`np.load(path)["masks"]`), aligned to detection order, in a per-video
+  folder named after the input video so runs into the same `output_dir` don't
+  overwrite each other.
 
 ---
 

@@ -77,21 +77,12 @@ class SegmentResult:
         name: str | None = None,
         frame_idx: int | None = None,
     ) -> Path:
-        """Save this frame's masks as a single ``.npy`` into ``output_dir``.
-
-        Masks are written as one ``(N, H, W)`` bool array, aligned to
-        ``object_ids`` order. ``name`` defaults to a zero-padded ``frame_idx``
-        suffix (so frames sort in order on disk); pass ``name`` to override.
-        ``output_dir`` is the masks folder itself — give each video its own (e.g.
-        a per-video subfolder) so frames don't overwrite across runs. Returns the
-        written path.
-        """
         masks_dir = Path(output_dir)
         masks_dir.mkdir(parents=True, exist_ok=True)
         if name is None:
             name = f"frame_{frame_idx:05d}" if frame_idx is not None else "masks"
-        path = masks_dir / f"{name}.npy"
-        np.save(path, self.masks.detach().cpu().numpy().astype(bool))
+        path = masks_dir / f"{name}.npz"
+        np.savez_compressed(path, masks=self.masks.detach().cpu().numpy().astype(bool))
         return path
 
 
@@ -116,20 +107,11 @@ class Sam3VideoWrapper(nn.Module):
         self.memory_window = memory_window
         self.video_storage_device = video_storage_device
 
-        # Default to SAM 3's stock config. Pass a ``Sam3VideoConfig`` to tune model
-        # knobs without the wrapper hardcoding any: ``image_size`` (input res — a
-        # speed/accuracy knob, since the forward scales ~quadratically with it) and
-        # the detection thresholds (``score_threshold_detection``, ...) all live
-        # there.
         config = config or Sam3VideoConfig.from_pretrained("facebook/sam3")
         self.image_size = config.image_size
         self.model = Sam3VideoModel.from_pretrained(
             "facebook/sam3", config=config, dtype=self.dtype
         ).to(self.device)
-        # The processor is device/dtype-agnostic at load time; it takes the device
-        # per call (see ``forward``), so no device_map here. Its resize target must
-        # match the model input, so derive it from ``config.image_size`` (the single
-        # source of truth) rather than carrying a second hardcoded value.
         self.processor = Sam3VideoProcessor.from_pretrained("facebook/sam3")
         size = {"height": self.image_size, "width": self.image_size}
         self.processor.image_processor.size = size

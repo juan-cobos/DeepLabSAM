@@ -74,36 +74,10 @@ class Pipeline:
         export_json: bool = True,
         save_masks: bool = False,
     ) -> Path:
-        """Run ``video_path`` through detect+track+pose, write an annotated mp4.
+        """Run ``video_path`` through detect+track+pose."""
 
-        ``text`` is the full prompt set — pass animals and objects together, e.g.
-        ``["mouse", "object"]``. Detections whose prompt is in ``SUPPORTED_ANIMALS``
-        are run through DLC pose; any other prompt (the object) is tracked/masked
-        only, so pose is never fitted onto an object and downstream code can still
-        quantify animal-object interaction from the object masks.
-
-        ``nms_threshold`` applies class-agnostic non-max suppression per frame:
-        with overlapping prompts (e.g. ``["mouse", "rat"]``) the same animal can be
-        matched by both, so duplicates with box IoU above this threshold are
-        dropped, keeping the higher-confidence detection.
-
-        The output is named after the input video (``<stem><name_suffix>.mp4``)
-        and written into ``output_dir``, which is created if needed. When
-        ``export_json`` is set, per-frame detections (boxes, scores, track + class
-        ids, each tagged with its frame index and prompt ``class_name``) are also
-        written to a sibling ``<stem><name_suffix>.json`` via ``sv.JSONSink``.
-        When ``save_masks`` is set, each frame's raw masks are also dumped as
-        ``(N, H, W)`` bool ``.npy`` arrays into a per-video
-        ``<output_dir>/<stem>_masks`` folder.
-        Returns the mp4 path.
-        """
-        # Fresh tracking session for this video (model weights stay loaded).
         predictor = self.predictor.reset(text)
 
-        # torchcodec decodes straight to torch tensors. NHWC (H, W, 3) is the
-        # layout the SAM 3 processor and the pose head already want, so frames
-        # reach both without a permute. Metadata gives fps / size / frame count
-        # up front for the writer and the progress bar.
         decoder = VideoDecoder(video_path, dimension_order="NHWC", device="cuda")
         meta = decoder.metadata
         frame_rate = meta.average_fps or 30.0
@@ -209,25 +183,4 @@ class Pipeline:
                 writer.write(annotated)
 
         writer.release()
-        print(f"Saved: {output_path}" + (f" + {json_path}" if export_json else ""))
         return output_path
-
-
-if __name__ == "__main__":
-    from time import perf_counter
-
-    max_frames = 10
-    pipe = Pipeline.default()
-
-    t0 = perf_counter()
-    pipe.run(
-        video_path="/home/juan/Videos/edit.mp4",
-        text="mice",
-        max_frames=max_frames,
-        output_dir="outputs",
-        export_json=False,
-    )
-    dt = perf_counter() - t0
-    print(f"{max_frames} frames in {dt:.2f}s = {max_frames / dt:.2f} fps")
-    if torch.cuda.is_available():
-        print(f"peak VRAM: {torch.cuda.max_memory_allocated() // 1024**2} MiB")
