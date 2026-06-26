@@ -94,7 +94,7 @@ class Sam3VideoWrapper(nn.Module):
         dtype=torch.bfloat16,
         state_device="cpu",
         video_storage_device="cpu",
-        memory_window: int | None = 64,
+        num_maskmem: int | None = 64,
     ):
         super().__init__()
 
@@ -104,7 +104,7 @@ class Sam3VideoWrapper(nn.Module):
         self.device = "cuda"
         self.dtype = dtype
         self.state_device = state_device
-        self.memory_window = memory_window
+        self.num_maskmem = num_maskmem
         self.video_storage_device = video_storage_device
 
         config = config or Sam3VideoConfig.from_pretrained("facebook/sam3")
@@ -162,9 +162,9 @@ class Sam3VideoWrapper(nn.Module):
         return SegmentResult.from_outputs(outputs)
 
     def _evict_old_memory(self, frame_idx: int) -> None:
-        if self.memory_window is None:
+        if self.num_maskmem is None:
             return
-        cutoff = frame_idx - self.memory_window
+        cutoff = frame_idx - self.num_maskmem
         if cutoff < 0:
             return
         for obj in self.inference_session.output_dict_per_obj.values():

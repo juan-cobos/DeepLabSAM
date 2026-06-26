@@ -3,7 +3,7 @@
 The leak: the model stores each frame's ``maskmem_features``/``maskmem_pos_enc``
 in ``session.output_dict_per_obj[obj]["(non_)cond_frame_outputs"][frame]`` on the
 GPU and never frees them, so those dicts grow ~linearly and OOM the GPU on long
-clips. ``Sam3VideoWrapper._evict_old_memory`` bounds them to ``memory_window``
+clips. ``Sam3VideoWrapper._evict_old_memory`` bounds them to ``num_maskmem``
 frames.
 
 These tests exercise the eviction logic directly against a fake session, so they
@@ -39,11 +39,11 @@ def fake_session(cond_frames, non_cond_frames):
 def evict(window, session, frame_idx):
     """Call the (unbound) method without constructing the wrapper (no model load).
 
-    ``_evict_old_memory`` reads ``self.memory_window`` and ``self.inference_session``,
+    ``_evict_old_memory`` reads ``self.num_maskmem`` and ``self.inference_session``,
     so a SimpleNamespace stands in for ``self``.
     """
     Sam3VideoWrapper._evict_old_memory(
-        types.SimpleNamespace(memory_window=window, inference_session=session),
+        types.SimpleNamespace(num_maskmem=window, inference_session=session),
         frame_idx,
     )
 
@@ -76,7 +76,7 @@ def test_memory_stays_bounded_over_a_long_stream():
     output dict never grows unbounded. Without eviction this reaches ~5000."""
     window = 64
     session = fake_session(cond_frames=[0], non_cond_frames=[])
-    sam = types.SimpleNamespace(memory_window=window, inference_session=session)
+    sam = types.SimpleNamespace(num_maskmem=window, inference_session=session)
     non_cond = session.output_dict_per_obj[0]["non_cond_frame_outputs"]
     for frame_idx in range(1, 5000):
         non_cond[frame_idx] = object()  # the model stores this frame's maskmem
@@ -99,7 +99,7 @@ def test_vram_stays_flat_when_streaming():
 
     from torchcodec.decoders import VideoDecoder
 
-    wrapper = Sam3VideoWrapper(text="mice", memory_window=64).eval()
+    wrapper = Sam3VideoWrapper(text="mice", num_maskmem=64).eval()
     decoder = VideoDecoder(video, dimension_order="NHWC")
 
     early = late = None

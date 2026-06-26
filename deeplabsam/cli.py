@@ -86,7 +86,7 @@ def run(
             help="SAM 3 detection score threshold (overrides config default).",
         ),
     ] = None,
-    memory_window: Annotated[
+    num_maskmem: Annotated[
         int, typer.Option(help="SAM 3 tracking memory window (frames).")
     ] = 64,
     # --- DLC pose head build --------------------------------------------------
@@ -118,7 +118,7 @@ def run(
     if score_threshold is not None:
         config.score_threshold_detection = score_threshold
 
-    predictor = Sam3VideoWrapper(config=config, memory_window=memory_window)
+    predictor = Sam3VideoWrapper(config=config, num_maskmem=num_maskmem)
     pose_head = DLCPoseHead(
         super_animal=super_animal,
         model_name=pose_model,
