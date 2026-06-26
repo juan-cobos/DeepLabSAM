@@ -94,7 +94,7 @@ class Sam3VideoWrapper(nn.Module):
         dtype=torch.bfloat16,
         state_device="cpu",
         video_storage_device="cpu",
-        memory_window: int = 64,
+        memory_window: int | None = 64,
     ):
         super().__init__()
 
@@ -162,6 +162,8 @@ class Sam3VideoWrapper(nn.Module):
         return SegmentResult.from_outputs(outputs)
 
     def _evict_old_memory(self, frame_idx: int) -> None:
+        if self.memory_window is None:
+            return
         cutoff = frame_idx - self.memory_window
         if cutoff < 0:
             return
