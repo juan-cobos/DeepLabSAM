@@ -72,6 +72,12 @@ def run(
         ),
     ] = False,
     # --- SAM 3 video model build ---------------------------------------------
+    checkpoint_path: Annotated[
+        Path,
+        typer.Option(
+            help="Path (or HF repo id) to load the SAM 3 video checkpoint from."
+        ),
+    ] = Path(__file__).resolve().parents[1] / "checkpoints" / "sam3",
     image_size: Annotated[
         int,
         typer.Option(
@@ -113,12 +119,14 @@ def run(
     from deeplabsam.pose.backends.dlc import DLCPoseHead
     from deeplabsam.segment.sam3video import Sam3VideoWrapper
 
-    config = Sam3VideoConfig.from_pretrained("facebook/sam3")
+    config = Sam3VideoConfig.from_pretrained(checkpoint_path)
     config.image_size = image_size
     if score_threshold is not None:
         config.score_threshold_detection = score_threshold
 
-    predictor = Sam3VideoWrapper(config=config, num_maskmem=num_maskmem)
+    predictor = Sam3VideoWrapper(
+        checkpoint_path=checkpoint_path, config=config, num_maskmem=num_maskmem
+    )
     pose_head = DLCPoseHead(
         super_animal=super_animal,
         model_name=pose_model,
