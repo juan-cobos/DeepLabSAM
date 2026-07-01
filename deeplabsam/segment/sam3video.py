@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -6,14 +5,8 @@ from pathlib import Path
 import numpy as np
 import supervision as sv
 import torch
-from dotenv import load_dotenv
-from huggingface_hub import login
 from torch import nn
 from transformers import Sam3VideoConfig, Sam3VideoModel, Sam3VideoProcessor
-
-load_dotenv()
-token = os.environ.get("HF_TOKEN")
-login(token=token)
 
 
 @dataclass
@@ -90,6 +83,7 @@ class Sam3VideoWrapper(nn.Module):
     def __init__(
         self,
         text: str | list[str] | None = None,
+        checkpoint_path: str | Path = "facebook/sam3",
         config: Sam3VideoConfig | None = None,
         dtype=torch.bfloat16,
         state_device="cpu",
@@ -107,12 +101,13 @@ class Sam3VideoWrapper(nn.Module):
         self.num_maskmem = num_maskmem
         self.video_storage_device = video_storage_device
 
-        config = config or Sam3VideoConfig.from_pretrained("facebook/sam3")
+        checkpoint_path = str(checkpoint_path)
+        config = config or Sam3VideoConfig.from_pretrained(checkpoint_path)
         self.image_size = config.image_size
         self.model = Sam3VideoModel.from_pretrained(
-            "facebook/sam3", config=config, dtype=self.dtype
+            checkpoint_path, config=config, dtype=self.dtype
         ).to(self.device)
-        self.processor = Sam3VideoProcessor.from_pretrained("facebook/sam3")
+        self.processor = Sam3VideoProcessor.from_pretrained(checkpoint_path)
         size = {"height": self.image_size, "width": self.image_size}
         self.processor.image_processor.size = size
         self.processor.video_processor.size = size
@@ -180,3 +175,9 @@ class Sam3VideoWrapper(nn.Module):
                 for k in list(cond):
                     if k < cutoff and k != anchor:
                         del cond[k]
+
+
+if __name__ == "__main__":
+    path = Path(__file__).resolve().parents[2] / "checkpoints" / "sam3"
+    wrapper = Sam3VideoWrapper(checkpoint_path=path)
+    print(f"Loaded SAM 3 video model from {path}")

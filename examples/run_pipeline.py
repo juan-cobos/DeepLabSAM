@@ -5,6 +5,7 @@ Usage:
 """
 
 import sys
+from pathlib import Path
 
 from transformers import Sam3VideoConfig
 
@@ -16,10 +17,11 @@ video_path = sys.argv[1]
 # Optional second arg caps the number of frames; omit to process the whole video.
 max_frames = int(sys.argv[2]) if len(sys.argv) > 2 else None
 
-config = Sam3VideoConfig.from_pretrained("facebook/sam3")
+checkpoint_path = Path(__file__).resolve().parents[1] / "checkpoints" / "sam3"
+config = Sam3VideoConfig.from_pretrained(checkpoint_path)
 config.image_size = 560
 config.score_threshold_detection = 0.5
-predictor = Sam3VideoWrapper(config=config)
+predictor = Sam3VideoWrapper(checkpoint_path=checkpoint_path, config=config)
 pose_head = DLCPoseHead(super_animal="superanimal_topviewmouse")
 pipe = Pipeline(predictor=predictor, pose_head=pose_head)
 
