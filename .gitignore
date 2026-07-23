@@ -14,5 +14,5 @@ wheels/
 *.zip
 
 outputs/
-checkpoints/**
+checkpoints/
 snapshot/
