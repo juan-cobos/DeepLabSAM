@@ -20,6 +20,7 @@ dependencies = [
     # [kernels] pulls the compatible kernels range (transformers pins <0.13),
     # enabling SAM 3 mask post-processing (NMS, hole filling, sprinkle removal).
     "transformers[kernels]>=5.10.2",
+    "pycocotools>=2.0.11",
 ]
 
 [project.scripts]
