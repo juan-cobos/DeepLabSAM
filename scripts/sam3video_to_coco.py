@@ -36,6 +36,7 @@ from supervision.dataset.formats.coco import (
 )
 from torchcodec.decoders import VideoDecoder
 from tqdm import tqdm
+from transformers import Sam3VideoConfig
 
 from deeplabsam.segment.sam3video import Sam3VideoWrapper
 
@@ -91,6 +92,13 @@ def parse_args() -> argparse.Namespace:
         help="Memory window for eviction; -1 disables eviction (unbounded VRAM).",
     )
     p.add_argument(
+        "--image-size",
+        type=int,
+        default=None,
+        help="Override the checkpoint's inference resolution (square, px). "
+        "Smaller is faster/less VRAM but less accurate; default keeps the model's native size.",
+    )
+    p.add_argument(
         "--checkpoint-path",
         default="facebook/sam3",
         help="SAM 3 checkpoint (HF id or local path).",
@@ -131,9 +139,13 @@ def main() -> None:
         label_annot = sv.LabelAnnotator(color_lookup=sv.ColorLookup.TRACK)
 
     print(f"Loading SAM 3 from {args.checkpoint_path} ...")
+    config = Sam3VideoConfig.from_pretrained(str(args.checkpoint_path))
+    if args.image_size is not None:
+        config.image_size = args.image_size
     wrapper = Sam3VideoWrapper(
         text=args.prompt,
         checkpoint_path=args.checkpoint_path,
+        config=config,
         dtype=DTYPES[args.dtype],
         num_maskmem=None if args.num_maskmem < 0 else args.num_maskmem,
     )
@@ -198,6 +210,8 @@ def main() -> None:
             # data["area"] (a round-trip hook for already-annotated files) and
             # otherwise falls back to the bounding-box area, which overstates a
             # thin/diagonal animal several-fold. Count the mask pixels instead.
+
+            # Patched in develop branchm not in release
             detections.data["area"] = detections.mask.sum(axis=(1, 2)).astype(float)
             anns, annotation_id = detections_to_coco_annotations(
                 detections=detections,
