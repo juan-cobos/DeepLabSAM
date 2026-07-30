@@ -68,7 +68,7 @@ pose_head = DLCPoseHead(super_animal=args.super_animal)
 if pose_head.bodyparts != gt_keypoints:
     raise SystemExit(
         "keypoint layout mismatch between pose head and annotations:\n"
-        f"  head: {pipe.pose_head.bodyparts}\n"
+        f"  head: {pose_head.bodyparts}\n"
         f"  gt:   {gt_keypoints}"
     )
 
