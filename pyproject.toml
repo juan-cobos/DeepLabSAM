@@ -26,6 +26,11 @@ dependencies = [
     "pandas>=3.0.5",
 ]
 
+[project.optional-dependencies]
+dlc = [
+    "deeplabcut @ git+https://github.com/DeepLabCut/DeepLabCut.git",
+]
+
 [project.scripts]
 deeplabsam = "deeplabsam.cli:main"
 
