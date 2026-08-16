@@ -1,39 +1,17 @@
 # DeepLabSAM
 
-> Text-prompted multi-animal pose tracking with pixel-accurate masks.
+![DeepLabSAM architecture: a video and a text prompt go into SAM 3 Video (detect · segment · track), whose masks gate the per-instance crop fed to a DeepLabCut pose head (keypoint regression), producing instance masks + tracks, a mask-gated instance crop, and tracked pose.](assets/architecture.png)
 
-<!-- Showcase: replace the placeholder below with annotated output images -->
-<!-- Example layout:
-| DeepLabCut | DeepLabSAM |
-|:---:|:---:|
-| ![dlc](docs/images/example_dlc.png) | ![deeplabsam](docs/images/example_deeplabsam.png) |
--->
+*DeepLabSAM converts raw multi-animal video into identity-resolved keypoints from a single text prompt.*
 
 ---
 
 ## What it does
 
-DeepLabSAM is an end-to-end **torch** pipeline that turns a video into per-animal
-masks, tracks, and pose keypoints from one or more text prompts — no per-video
-annotation required.
-
-It chains two models in one CUDA process:
-
-1. **[SAM 3 video](https://huggingface.co/facebook/sam3)** (HF Transformers) —
-   open-vocabulary detection **and** tracking. A text prompt like `"mice"`
-   segments every matching animal and carries a stable track ID across frames,
-   so identical, frequently-interacting animals don't swap IDs on contact.
-2. **DeepLabCut SuperAnimal pose** — the genuine DeepLabCut `PoseModel` (HRNet /
-   ResNet heatmap heads) running in pure torch, with no `deeplabcut` dependency.
-   Weights are pulled from the DeepLabCut Model Zoo on first use, and you can also
-   load your own DLC-trained model (a project config + snapshot) instead of a
-   SuperAnimal one. The pose stage sits behind a small `PoseHead` contract, so the
-   DLC backend can be swapped for another later.
-
-The key trick: each animal's **mask gates its pose crop**. Instead of feeding the
-raw bounding box (which, when two animals overlap, includes the neighbour's
-body), the background is zeroed out so the pose head only ever sees the target
-animal — cleaner keypoints under occlusion.
+DeepLabSAM is a unified, training-free behavioural analysis pipeline: it
+streams a video through **[SAM 3](https://huggingface.co/facebook/sam3)** for
+open-vocabulary detection, segmentation, and tracking, then hands each tracked
+instance's **mask-gated crop** to a pretrained **DeepLabCut** pose head.
 
 | Capability | DeepLabCut | DeepLabSAM |
 |---|:---:|:---:|
@@ -43,32 +21,6 @@ animal — cleaner keypoints under occlusion.
 | Text prompt (open vocabulary) | — | ✓ |
 | Mask-gated pose crops | — | ✓ |
 | `supervision`-native output | — | ✓ |
-
----
-
-## How it works
-
-```
-video frames ──▶ Sam3VideoWrapper(frame) ──▶ SegmentResult (boxes / masks / track-ids, GPU tensors)
-                                                │
-                                                ├─▶ PoseHead.predict_tensor      (crop, mask-gated → keypoints)
-                                                └─▶ SegmentResult.to_detections  (sv.Detections for annotation / JSON)
-                                                           │
-                                                annotate (masks + boxes + track id + keypoints) ──▶ annotated .mp4 + .json
-```
-
-With multiple prompts (e.g. `["mouse", "object"]`) only animal prompts are run
-through pose; objects are masked/tracked only. Per-frame class-agnostic NMS drops
-duplicate boxes when overlapping prompts match the same instance.
-
----
-
-## Requirements
-
-- **Python 3.11+** and an **NVIDIA GPU** (CUDA).
-- A **Hugging Face token** — `facebook/sam3` weights are gated. Request access on
-  the model page, then make the token available (see below). DeepLabCut Model Zoo
-  pose weights download without a token.
 
 ---
 
@@ -82,13 +34,17 @@ cd DeepLabSAM
 uv sync
 ```
 
-Provide your Hugging Face token via a `.env` file (loaded automatically) or the
-environment:
+`facebook/sam3` weights are gated — request access on the
+[model page](https://huggingface.co/facebook/sam3), then set `HF_TOKEN` via
+`.env` (loaded automatically) or the environment:
 
 ```bash
 echo "HF_TOKEN=hf_..." > .env
-# or: export HF_TOKEN=hf_...
 ```
+
+Already have the weights locally? Point `--checkpoint-path`/`checkpoint_path=`
+at that directory instead of the `facebook/sam3` repo id to skip Hugging Face
+entirely. DeepLabCut Model Zoo weights need no token.
 
 ---
 
@@ -113,7 +69,9 @@ Every knob of the run is a flag — the SAM 3 build (`--image-size`,
 `--score-threshold`, `--num-maskmem`), the DLC pose head (`--super-animal`,
 `--pose-model`, `--pose-input-size`, `--device`) and the per-run options. Repeat
 `--text`/`-t` for several prompts; animal prompts get pose, others are
-mask/track only:
+mask/track only. With multiple prompts (e.g. `-t mouse -t object`), per-frame
+class-agnostic NMS (`--class-agnostic`, `--nms-threshold`) drops duplicate
+boxes when overlapping prompts match the same instance:
 
 ```bash
 deeplabsam run path/to/video.mp4 \
@@ -253,18 +211,6 @@ The pose input crop size is configurable (`--pose-input-size`, or
 divisor — 32 for HRNet). To run a community DLC model beyond the SuperAnimal zoo,
 build the head from a project config + snapshot with
 `DLCPoseHead.from_dlc_project(config, snapshot_path)`.
-
----
-
-## Development
-
-```bash
-git clone https://github.com/juan-cobos/DeepLabSAM
-cd DeepLabSAM
-uv sync
-```
-
-Requires `HF_TOKEN` for the gated `facebook/sam3` weights.
 
 ---
 
