@@ -96,20 +96,27 @@ echo "HF_TOKEN=hf_..." > .env
 
 ### CLI
 
-`uv sync` installs a `deeplabsam` command that runs a video end to end:
+`uv sync` installs a `deeplabsam` command with three subcommands. Run
+`deeplabsam --help` or `deeplabsam <command> --help` for the full flag list
+(`--help` is instant — the heavy model imports are deferred until a run
+actually starts).
+
+#### `deeplabsam run` — single-shot
+
+Detect + track + pose in one pass, straight to an annotated video:
 
 ```bash
-deeplabsam path/to/video.mp4 --text mice
+deeplabsam run path/to/video.mp4 --text mice
 ```
 
 Every knob of the run is a flag — the SAM 3 build (`--image-size`,
-`--score-threshold`, `--memory-window`), the DLC pose head (`--super-animal`,
+`--score-threshold`, `--num-maskmem`), the DLC pose head (`--super-animal`,
 `--pose-model`, `--pose-input-size`, `--device`) and the per-run options. Repeat
 `--text`/`-t` for several prompts; animal prompts get pose, others are
 mask/track only:
 
 ```bash
-deeplabsam path/to/video.mp4 \
+deeplabsam run path/to/video.mp4 \
     -t mouse -t object \
     --image-size 1008 \
     --max-frames 200 \
@@ -118,8 +125,33 @@ deeplabsam path/to/video.mp4 \
     --nms-threshold 0.5
 ```
 
-Run `deeplabsam --help` for the full flag list (`--help` is instant — the
-heavy model imports are deferred until a run actually starts).
+#### `deeplabsam segment` + `deeplabsam pose` — curated workflow
+
+For datasets you want to hand-curate before pose is fit (drop bad frames, fix
+a track ID swap, …), split the run into two stages around a standard COCO
+file:
+
+```bash
+# 1. Track the video, write frames/ + a COCO annotations.json for curation.
+deeplabsam segment path/to/video.mp4 \
+    --out-dir outputs/my_video \
+    --prompt mouse \
+    --max-detections 1
+
+# 2. Curate outputs/my_video/annotations.json + frames/ by hand, then fit pose.
+deeplabsam pose \
+    --in outputs/my_video/annotations.json \
+    --out outputs/my_video/annotations_pose.json
+```
+
+`segment` writes `<out-dir>/frames/*.jpg` (raw decoded frames), optionally
+`<out-dir>/viz/*.png` (masks/boxes/labels drawn, for a quick sanity check
+without opening an annotation tool), and `<out-dir>/annotations.json` (COCO
+detections + segmentations, the SAM 3 score, and the persistent `track_id`).
+Edit `annotations.json` — or drop frames — with any COCO-aware tool, then run
+`pose`, which reads the (possibly curated) file, fits pose per instance
+mask-gated to its segmentation, and writes the keypoints back in COCO
+person-keypoints form (plus a `_check.mp4` QC video by default).
 
 ### Python API
 
