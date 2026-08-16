@@ -4,6 +4,17 @@ version = "0.1.0"
 description = "Text-prompted multi-animal pose tracking with pixel-accurate masks (SAM 3 video + DeepLabCut)."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Juan Cobos", email = "juan.cobos@igf.cnrs.fr" }]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
@@ -29,6 +40,9 @@ dependencies = [
 
 [project.scripts]
 deeplabsam = "deeplabsam.cli:main"
+
+[project.urls]
+Repository = "https://github.com/juan-cobos/DeepLabSAM"
 
 [build-system]
 requires = ["hatchling"]

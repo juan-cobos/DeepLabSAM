@@ -1,0 +1,15 @@
+DeepLabSAM
+Copyright 2026 Juan Cobos
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes vendored code from DeepLabCut (deeplabcut.org),
+Copyright (C) A. & M.W. Mathis Labs, located under
+deeplabsam/pose/_dlc/. That code remains licensed under the GNU Lesser
+General Public License v3.0 (see deeplabsam/pose/_dlc/LICENSE), independent
+of the Apache License covering the rest of this repository.
+
+Model weights downloaded at runtime (SAM 3 from Meta AI, DeepLabCut
+SuperAnimal weights from the DeepLabCut Model Zoo) are distributed under
+their respective providers' own terms, which are not covered by either
+license above.
