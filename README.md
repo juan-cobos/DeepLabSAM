@@ -26,7 +26,12 @@ instance's **mask-gated crop** to a pretrained **DeepLabCut** pose head.
 
 ## Installation
 
-Not yet published to PyPI — install from source with [uv](https://docs.astral.sh/uv/):
+```bash
+pip install deeplabsam
+```
+
+For development, or to run the latest unreleased code, install from source
+with [uv](https://docs.astral.sh/uv/) instead:
 
 ```bash
 git clone https://github.com/juan-cobos/DeepLabSAM
