@@ -82,20 +82,18 @@ class DLCPoseHead:
         divisor = max(pad.get("pad_width_divisor", 1), pad.get("pad_height_divisor", 1))
         if input_size % divisor != 0:
             raise ValueError(
-                f"input_size must be divisible by {divisor}, got {input_size}"
+                f"input_size must be divisible by {divisor}, got {input_size}",
             )
         self.input_size = input_size
         self.bodyparts = list(config["metadata"]["bodyparts"])
         self.num_bodyparts = len(self.bodyparts)
 
         self.model = PoseModel.build(config["model"])
-        state = torch.load(snapshot_path, map_location="cpu", weights_only=False)[
-            "model"
-        ]
+        state = torch.load(snapshot_path, map_location="cpu", weights_only=False)["model"]
         missing, unexpected = self.model.load_state_dict(state, strict=False)
         if missing or unexpected:
             raise RuntimeError(
-                f"DLC snapshot load mismatch: missing={missing} unexpected={unexpected}"
+                f"DLC snapshot load mismatch: missing={missing} unexpected={unexpected}",
             )
 
         self.model = self.model.to(device).eval()
@@ -119,6 +117,7 @@ class DLCPoseHead:
 
         Returns:
             (N, K, 3) array of (x, y, confidence) in original image coords.
+
         """
         img = torch.from_numpy(np.ascontiguousarray(image))
         return self.predict_tensor(img, torch.as_tensor(boxes), masks)
@@ -151,6 +150,7 @@ class DLCPoseHead:
 
         Returns:
             (N, K, 3) array of (x, y, confidence) in original image coords.
+
         """
         if images.ndim == 3 and images.shape[0] != 3 and images.shape[-1] == 3:
             images = images.permute(2, 0, 1)  # HWC -> CHW
@@ -178,14 +178,26 @@ class DLCPoseHead:
             # crop the box and aspect-preserving resize in one op, then center-pad
             # to a square SxS canvas ([left, top, right, bottom] padding).
             resized = TF.resized_crop(
-                images, y1, x1, ch, cw, [new_h, new_w], antialias=True
+                images,
+                y1,
+                x1,
+                ch,
+                cw,
+                [new_h, new_w],
+                antialias=True,
             )
             crops.append(TF.pad(resized, pad))
             if masks is not None:
                 # Letterbox the matching mask the same way (no antialias keeps the
                 # edge crisp); padded region stays 0 so it's masked out too.
                 m = TF.resized_crop(
-                    masks[i, None], y1, x1, ch, cw, [new_h, new_w], antialias=False
+                    masks[i, None],
+                    y1,
+                    x1,
+                    ch,
+                    cw,
+                    [new_h, new_w],
+                    antialias=False,
                 )
                 mask_crops.append(TF.pad(m, pad))
             tfs.append((x1, y1, scale, pad_x, pad_y))
@@ -222,7 +234,8 @@ class DLCPoseHead:
         xy = (poses[:, :, :2] - tf[:, None, 3:]) / tf[:, None, 2:3] + tf[:, None, :2]
         out = np.zeros((N, self.num_bodyparts, 3), dtype=np.float32)
         out[np.asarray(valid, dtype=int)] = np.concatenate(
-            [xy, poses[:, :, 2:]], axis=2
+            [xy, poses[:, :, 2:]],
+            axis=2,
         )
         return out
 
@@ -232,5 +245,6 @@ if __name__ == "__main__":
     super_animal = "superanimal_topviewmouse"
     head = DLCPoseHead(super_animal=super_animal, device=device)
     print(
-        f"Superanimal {super_animal}: {head.num_bodyparts} bodyparts ({head.model_name}) on {device}"
+        f"Superanimal {super_animal}: {head.num_bodyparts} bodyparts "
+        f"({head.model_name}) on {device}",
     )

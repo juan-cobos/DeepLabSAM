@@ -21,6 +21,10 @@ dependencies = [
     # enabling SAM 3 mask post-processing (NMS, hole filling, sprinkle removal).
     "transformers[kernels]>=5.10.2",
     "pycocotools>=2.0.11",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "huggingface-hub>=0.24",
 ]
 
 [project.scripts]
@@ -36,6 +40,8 @@ packages = ["deeplabsam"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pre-commit>=4.0",
+    "ruff>=0.14",
 ]
 
 [tool.pytest.ini_options]
@@ -44,3 +50,12 @@ testpaths = ["tests"]
 markers = [
     "slow: downloads large model weights on first run",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+# Vendored DeepLabCut model code — kept as close to upstream as possible.
+exclude = ["deeplabsam/pose/_dlc"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

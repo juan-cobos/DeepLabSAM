@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -5,8 +6,10 @@ from pathlib import Path
 import numpy as np
 import supervision as sv
 import torch
+from dotenv import load_dotenv
 from torch import nn
 from transformers import Sam3VideoConfig, Sam3VideoModel, Sam3VideoProcessor
+from transformers.image_utils import ImageInput
 
 
 @dataclass
@@ -37,9 +40,7 @@ class SegmentResult:
     @cached_property
     def prompts(self) -> list[str]:
         """Per-detection prompt text, aligned to ``object_ids`` order."""
-        obj_to_prompt = {
-            oid: p for p, oids in self.prompt_to_obj_ids.items() for oid in oids
-        }
+        obj_to_prompt = {oid: p for p, oids in self.prompt_to_obj_ids.items() for oid in oids}
         return [obj_to_prompt[int(oid)] for oid in self.object_ids.tolist()]
 
     def to_detections(self) -> sv.Detections:
@@ -82,30 +83,40 @@ class SegmentResult:
 class Sam3VideoWrapper(nn.Module):
     def __init__(
         self,
-        text: str | list[str] | None = None,
         checkpoint_path: str | Path = "facebook/sam3",
         config: Sam3VideoConfig | None = None,
-        dtype=torch.bfloat16,
-        state_device="cpu",
-        video_storage_device="cpu",
+        text: str | list[str] | None = None,
+        dtype: torch.dtype = torch.bfloat16,
+        device: str = "cuda",
+        state_device: str = "cpu",
+        video_storage_device: str = "cpu",
         num_maskmem: int | None = 64,
     ):
         super().__init__()
 
-        if not torch.cuda.is_available():
-            raise ValueError()
+        if device == "cuda" and not torch.cuda.is_available():
+            warnings.warn(
+                "CUDA is not available; Sam3VideoWrapper defaults to 'cuda' and "
+                "moving the model there will fail. Pass device='cpu' explicitly "
+                "if you intend to load without a GPU.",
+                stacklevel=2,
+            )
 
-        self.device = "cuda"
         self.dtype = dtype
+        self.device = device
         self.state_device = state_device
-        self.num_maskmem = num_maskmem
         self.video_storage_device = video_storage_device
+        self.num_maskmem = num_maskmem
+
+        load_dotenv()  # HF_TOKEN (and e.g. HF_HUB_OFFLINE) for the gated download below
 
         checkpoint_path = str(checkpoint_path)
         config = config or Sam3VideoConfig.from_pretrained(checkpoint_path)
         self.image_size = config.image_size
         self.model = Sam3VideoModel.from_pretrained(
-            checkpoint_path, config=config, dtype=self.dtype
+            checkpoint_path,
+            config=config,
+            dtype=self.dtype,
         ).to(self.device)
         self.processor = Sam3VideoProcessor.from_pretrained(checkpoint_path)
         size = {"height": self.image_size, "width": self.image_size}
@@ -137,7 +148,7 @@ class Sam3VideoWrapper(nn.Module):
         return self
 
     @torch.inference_mode()
-    def forward(self, images, reverse=False):
+    def forward(self, images: ImageInput, reverse: bool = False) -> SegmentResult:
         inputs = self.processor(images=images, device=self.device, return_tensors="pt")
         # Process frame using streaming inference - pass the processed pixel_values
         model_outputs = self.model(
@@ -178,6 +189,6 @@ class Sam3VideoWrapper(nn.Module):
 
 
 if __name__ == "__main__":
-    path = Path(__file__).resolve().parents[2] / "checkpoints" / "sam3"
-    wrapper = Sam3VideoWrapper(checkpoint_path=path)
-    print(f"Loaded SAM 3 video model from {path}")
+    checkpoint_path = "facebook/sam3"
+    wrapper = Sam3VideoWrapper(checkpoint_path=checkpoint_path)
+    print(f"Loaded SAM 3 video model from {checkpoint_path}")

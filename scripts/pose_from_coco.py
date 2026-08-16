@@ -23,6 +23,7 @@ Example:
     uv run scripts/pose_from_coco.py \
         --in /home/juan/Pictures/sam_masks/cleaned/barnes_maze2/annotations.json \
         --out /home/juan/Pictures/sam_masks/cleaned/barnes_maze2/annotations_pose.json
+
 """
 
 from __future__ import annotations
@@ -140,7 +141,8 @@ def decode_segmentation(segmentation, height: int, width: int) -> np.ndarray:
 
 
 def to_coco_keypoints(
-    pose: np.ndarray, threshold: float
+    pose: np.ndarray,
+    threshold: float,
 ) -> tuple[list[float], list[float], int]:
     """(K, 3) ``(x, y, conf)`` -> COCO ``keypoints`` flat list, scores, count.
 
@@ -217,7 +219,8 @@ def main() -> None:
     def vertex_annotator_for(track_id: int) -> sv.VertexAnnotator:
         if track_id not in vertex_annots:
             vertex_annots[track_id] = sv.VertexAnnotator(
-                color=sv.ColorPalette.DEFAULT.by_idx(track_id), radius=3
+                color=sv.ColorPalette.DEFAULT.by_idx(track_id),
+                radius=3,
             )
         return vertex_annots[track_id]
 
@@ -236,7 +239,7 @@ def main() -> None:
 
         if anns:
             masks = np.stack(
-                [decode_segmentation(a["segmentation"], height, width) for a in anns]
+                [decode_segmentation(a["segmentation"], height, width) for a in anns],
             )
             # COCO bbox is xywh; the pose head crops from xyxy.
             xywh = np.array([a["bbox"] for a in anns], dtype=np.float32)
@@ -274,12 +277,12 @@ def main() -> None:
                     mask=masks,
                     class_id=np.array([a["category_id"] - 1 for a in anns], dtype=int),
                     tracker_id=np.array(
-                        [a.get("track_id", i) for i, a in enumerate(anns)], dtype=int
+                        [a.get("track_id", i) for i, a in enumerate(anns)],
+                        dtype=int,
                     ),
                 )
                 labels = [
-                    f"{name_by_id[a['category_id']]} #{t}"
-                    for a, t in zip(anns, det.tracker_id)
+                    f"{name_by_id[a['category_id']]} #{t}" for a, t in zip(anns, det.tracker_id)
                 ]
                 scene = mask_annot.annotate(scene, det)
                 scene = box_annot.annotate(scene, det)

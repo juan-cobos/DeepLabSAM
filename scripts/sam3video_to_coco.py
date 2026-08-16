@@ -1,7 +1,6 @@
 """Segment a video with SAM 3 (detect + track) and export COCO annotations.
 
-Video sibling of ``autolabel/sam3_to_coco.py``: instead of a folder of independent
-images run through the SAM 3 *image* model, this streams a video through
+Run through the SAM 3 *image* model, this streams a video through
 ``Sam3VideoWrapper`` so objects are tracked across frames. For every frame each
 tracked instance is written to a standard COCO detection/segmentation file
 (``annotations.json``) containing, per instance, a ``bbox``, a ``segmentation``
@@ -18,6 +17,7 @@ Example:
         --video /home/juan/Videos/example_videos/edited/stereotypes.mp4 \
         --out-dir ./outputs/stereotypes \
         --prompt mouse --max-frames 300
+
 """
 
 from __future__ import annotations
@@ -110,7 +110,9 @@ def parse_args() -> argparse.Namespace:
         help="Compute precision.",
     )
     p.add_argument(
-        "--no-viz", action="store_true", help="Skip writing the annotated viz/ frames."
+        "--no-viz",
+        action="store_true",
+        help="Skip writing the annotated viz/ frames.",
     )
     return p.parse_args()
 
@@ -189,7 +191,7 @@ def main() -> None:
                 "width": width,
                 "height": height,
                 "frame_index": frame_idx,
-            }
+            },
         )
 
         detections = result.to_detections()
@@ -204,7 +206,8 @@ def main() -> None:
             # Remap the per-frame class_id to the global, name-based category id.
             names = detections.data["class_name"]
             detections.class_id = np.array(
-                [name_to_category_id[n] - 1 for n in names], dtype=int
+                [name_to_category_id[n] - 1 for n in names],
+                dtype=int,
             )
             # COCO `area` is the *mask* area. supervision only reads it from
             # data["area"] (a round-trip hook for already-annotated files) and
@@ -221,7 +224,9 @@ def main() -> None:
             )
             # anns are in detection order; attach SAM 3 score + persistent track id.
             for ann, score, tid in zip(
-                anns, detections.confidence, detections.tracker_id
+                anns,
+                detections.confidence,
+                detections.tracker_id,
             ):
                 ann["score"] = round(float(score), 5)
                 ann["track_id"] = int(tid)
@@ -233,7 +238,8 @@ def main() -> None:
                 labels = [
                     f"{n} #{t}"
                     for n, t in zip(
-                        detections.data["class_name"], detections.tracker_id
+                        detections.data["class_name"],
+                        detections.tracker_id,
                     )
                 ]
                 scene = mask_annot.annotate(scene, detections)
@@ -246,7 +252,7 @@ def main() -> None:
 
     coco = {
         "info": {
-            "description": f"SAM 3 video '{' + '.join(args.prompt)}' auto-annotations"
+            "description": f"SAM 3 video '{' + '.join(args.prompt)}' auto-annotations",
         },
         "images": coco_images,
         "annotations": coco_annotations,
@@ -256,7 +262,7 @@ def main() -> None:
     with open(out_path, "w") as f:
         json.dump(coco, f, default=_json_default)
     print(
-        f"\nDone. {len(coco_images)} frames, {len(coco_annotations)} instances -> {out_path}"
+        f"\nDone. {len(coco_images)} frames, {len(coco_annotations)} instances -> {out_path}",
     )
 
 
