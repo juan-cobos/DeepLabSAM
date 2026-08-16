@@ -123,12 +123,12 @@ pipe = Pipeline.default(super_animal="superanimal_topviewmouse")
 # Run per video → writes an annotated mp4 (+ a sibling JSON) and returns its path.
 out = pipe.run(
     video_path="recording.mp4",
-    text="mice",            # open-vocabulary prompt; str or list[str]
-    output_dir="outputs",   # <video-stem>_annotated.mp4 is written here
-    max_frames=None,        # cap frames for a quick test
-    keypoint_threshold=0.3, # hide low-confidence keypoints
-    export_json=True,       # also write <video-stem>_annotated.json
-    save_masks=False,       # dump per-frame masks to outputs/<stem>_masks/*.npz
+    text="mice",  # open-vocabulary prompt; str or list[str]
+    output_dir="outputs",  # <video-stem>_annotated.mp4 is written here
+    max_frames=None,  # cap frames for a quick test
+    keypoint_threshold=0.3,  # hide low-confidence keypoints
+    export_json=True,  # also write <video-stem>_annotated.json
+    save_masks=False,  # dump per-frame masks to outputs/<stem>_masks/*.npz
 )
 print(out)  # outputs/recording_annotated.mp4
 ```

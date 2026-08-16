@@ -129,9 +129,7 @@ class Pipeline:
                     writer.write(annotated)
                     continue
 
-                det = det.with_nms(
-                    threshold=nms_threshold, class_agnostic=class_agnostic
-                )
+                det = det.with_nms(threshold=nms_threshold, class_agnostic=class_agnostic)
                 # Contiguous display ids so labels/colors skip NMS's id holes.
                 det.tracker_id = to_display_ids(det.tracker_id)
                 class_names = list(det.data["class_name"])
@@ -139,19 +137,14 @@ class Pipeline:
                 # Per-detection prompt splits animals (pose targets) from objects
                 # (mask/track only). Boolean over detection order.
                 is_animal = np.array(
-                    [
-                        any(a in p.lower() for a in SUPPORTED_ANIMALS)
-                        for p in class_names
-                    ]
+                    [any(a in p.lower() for a in SUPPORTED_ANIMALS) for p in class_names]
                 )
 
                 # Pose runs only on animal detections; object masks pass through
                 # untouched. Keypoints are scattered back into full detection order
                 # so JSON/annotation stay aligned (objects keep all-zero, hence
                 # not-visible, keypoints).
-                kpts = np.zeros(
-                    (len(det), self.pose_head.num_bodyparts, 3), dtype=np.float32
-                )
+                kpts = np.zeros((len(det), self.pose_head.num_bodyparts, 3), dtype=np.float32)
                 if is_animal.any():
                     kpts[is_animal] = self.pose_head.predict_tensor(
                         frame, det.xyxy[is_animal], det.mask[is_animal]
