@@ -1,6 +1,6 @@
 [project]
 name = "deeplabsam"
-version = "0.1.0"
+version = "0.1.1"
 description = "Text-prompted multi-animal pose tracking with pixel-accurate masks (SAM 3 video + DeepLabCut)."
 readme = "README.md"
 requires-python = ">=3.11"

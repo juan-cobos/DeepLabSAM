@@ -318,7 +318,7 @@ wheels = [
 
 [[package]]
 name = "deeplabsam"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
@@ -353,7 +353,7 @@ requires-dist = [
     { name = "pycocotools", specifier = ">=2.0.11" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "supervision", specifier = "==0.29" },
+    { name = "supervision", specifier = ">=0.29" },
     { name = "timm", specifier = ">=1.0.7" },
     { name = "torch", specifier = ">=2.12.0" },
     { name = "torchcodec", specifier = ">=0.8.0" },
