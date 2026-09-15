@@ -18,7 +18,7 @@ classifiers = [
 dependencies = [
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
-    "supervision==0.29",
+    "supervision>=0.29",
     # timm supplies the HRNet backbone for the SuperAnimal DeepLabCut pose heads,
     # built from the bundled configs (no deeplabcut dependency).
     "timm>=1.0.7",
