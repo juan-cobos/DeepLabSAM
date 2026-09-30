@@ -13,15 +13,6 @@ streams a video through **[SAM 3](https://huggingface.co/facebook/sam3)** for
 open-vocabulary detection, segmentation, and tracking, then hands each tracked
 instance's **mask-gated crop** to a pretrained **DeepLabCut** pose head.
 
-| Capability | DeepLabCut | DeepLabSAM |
-|---|:---:|:---:|
-| Keypoint estimation | ✓ | ✓ |
-| Instance masks | — | ✓ |
-| Multi-animal tracking (stable IDs) | — | ✓ |
-| Text prompt (open vocabulary) | — | ✓ |
-| Mask-gated pose crops | — | ✓ |
-| `supervision`-native output | — | ✓ |
-
 ---
 
 ## Installation
@@ -49,7 +40,7 @@ echo "HF_TOKEN=hf_..." > .env
 
 Already have the weights locally? Point `--checkpoint-path`/`checkpoint_path=`
 at that directory instead of the `facebook/sam3` repo id to skip Hugging Face
-entirely. DeepLabCut Model Zoo weights need no token.
+entirely.
 
 ---
 
