@@ -1,20 +1,4 @@
-"""COCO -> COCO+keypoints: fit DeepLabCut pose onto an existing SAM 3 COCO export.
-
-The "pose" stage of the segment / curate / pose workflow: reads the frames and
-segmentations :func:`deeplabsam.segment.to_coco.segment_to_coco` wrote (and that
-have since been curated), fits :class:`~deeplabsam.pose.backends.dlc.DLCPoseHead`
-per instance -- the mask zeroes the crop's background so the pose stays on the
-intended animal -- and writes the keypoints back in COCO person-keypoints form.
-
-Keypoints are written back as:
-  * ``categories[*]["keypoints"]`` -- the SuperAnimal bodypart names,
-  * ``annotations[*]["keypoints"]`` -- flat ``[x, y, v] * K`` (``v = 2`` when the
-    model's confidence clears ``threshold``, else 0),
-  * ``annotations[*]["keypoint_scores"]`` -- the raw per-keypoint confidences,
-  * ``annotations[*]["num_keypoints"]`` -- how many cleared the threshold.
-Everything already in the file (ids, scores, track ids, masks) is carried through
-untouched, so the frames on disk still line up.
-"""
+"""COCO -> COCO+keypoints: fit DeepLabCut pose onto an existing SAM 3 COCO export."""
 
 import json
 from collections import defaultdict
@@ -80,7 +64,6 @@ def pose_from_coco(
     video: str | Path | None = None,
     save_video: bool = True,
     fps: float = 30.0,
-    seed: int = 0,
 ) -> Path:
     """Fit ``super_animal`` pose onto every instance in a SAM 3 COCO export.
 
@@ -94,14 +77,6 @@ def pose_from_coco(
 
     """
     torch.set_float32_matmul_precision("high")
-    # Pose inference is already deterministic (eval mode, no sampling), but seeding
-    # + pinning cuDNN's algorithm choice makes that a guarantee rather than a
-    # property that a future backend change could quietly break.
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
     in_path = Path(in_path)
     out_path = Path(out_path) if out_path else in_path.with_name(f"{in_path.stem}_pose.json")

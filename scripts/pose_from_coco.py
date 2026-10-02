@@ -40,7 +40,7 @@ import torch
 from tqdm import tqdm
 
 from deeplabsam.pose.backends.dlc import DLCPoseHead
-from deeplabsam.pose.from_coco import decode_segmentation
+from deeplabsam.pose.coco import decode_segmentation
 
 
 def parse_args() -> argparse.Namespace:

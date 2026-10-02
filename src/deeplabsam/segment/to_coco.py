@@ -1,12 +1,4 @@
-"""Video -> COCO: segment + track with SAM 3, write frames + a COCO annotation file.
-
-The "segment" stage of the segment / curate / pose workflow: stream a video
-through :class:`~deeplabsam.segment.sam3video.Sam3VideoWrapper` so each tracked
-instance gets a standard COCO bbox/segmentation record, alongside the decoded
-frames and (optionally) an annotated viz for a quick sanity check. Hand the
-output off for manual curation before :func:`deeplabsam.pose.from_coco.pose_from_coco`
-fits keypoints on it.
-"""
+"""Video -> COCO: segment + track with SAM 3, write frames + a COCO annotation file."""
 
 import json
 from pathlib import Path

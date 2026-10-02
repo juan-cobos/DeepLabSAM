@@ -350,7 +350,19 @@ def pose_command(
 ) -> None:
     """Fit DeepLabCut pose onto a curated SAM 3 COCO export from `deeplabsam segment`."""
     # Imports are deferred so `--help` stays instant (the model imports are heavy).
-    from deeplabsam.pose.from_coco import pose_from_coco
+    import numpy as np
+    import torch
+
+    from deeplabsam.pose.coco import pose_from_coco
+
+    # Pose inference is already deterministic (eval mode, no sampling), but seeding
+    # + pinning cuDNN's algorithm choice makes that a guarantee rather than a
+    # property that a future backend change could quietly break.
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     out = pose_from_coco(
         in_path=in_path,
@@ -365,7 +377,6 @@ def pose_command(
         video=video,
         save_video=not no_video,
         fps=fps,
-        seed=seed,
     )
     typer.echo(f"Done. Keypoints written to {out}")
 
