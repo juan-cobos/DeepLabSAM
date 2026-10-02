@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from pathlib import Path
 
 import numpy as np
@@ -114,7 +115,24 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip writing the annotated viz/ frames.",
     )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Seed for python/numpy/torch RNGs (also forces deterministic CUDA kernels).",
+    )
     return p.parse_args()
+
+
+def seed_everything(seed: int) -> None:
+    """Seed every RNG and force deterministic CUDA kernels."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True, warn_only=True)
 
 
 def _json_default(o):
@@ -128,6 +146,7 @@ def _json_default(o):
 
 def main() -> None:
     args = parse_args()
+    seed_everything(args.seed)
     torch.set_float32_matmul_precision("high")
 
     frames_dir = args.out_dir / "frames"
