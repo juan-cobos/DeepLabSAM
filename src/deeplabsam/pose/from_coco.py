@@ -33,12 +33,16 @@ from deeplabsam.pose.backends.dlc import DLCPoseHead
 def decode_segmentation(segmentation, height: int, width: int) -> np.ndarray:
     """COCO ``segmentation`` (polygons, uncompressed RLE, or RLE) -> HxW bool mask."""
     if isinstance(segmentation, list):  # polygon(s)
-        # A polygon needs >= 3 points; frPyObjects raises IndexError on shorter ones.
-        polygons = [p for p in segmentation if len(p) >= 6]
-        if not polygons:
-            return np.zeros((height, width), dtype=bool)
-        rle = mask_utils.merge(mask_utils.frPyObjects(polygons, height, width))
-    elif isinstance(segmentation["counts"], list):  # uncompressed RLE
+        mask = np.zeros((height, width), dtype=np.uint8)
+        polygons = [
+            np.asarray(p, dtype=np.float32).reshape(-1, 2).round().astype(np.int32)
+            for p in segmentation
+            if len(p) >= 6  # a polygon needs >= 3 points
+        ]
+        if polygons:
+            cv2.fillPoly(mask, polygons, 1)
+        return mask.astype(bool)
+    if isinstance(segmentation["counts"], list):  # uncompressed RLE
         rle = mask_utils.frPyObjects(segmentation, height, width)
     else:  # compressed RLE
         rle = segmentation

@@ -37,10 +37,10 @@ import cv2
 import numpy as np
 import supervision as sv
 import torch
-from pycocotools import mask as mask_utils
 from tqdm import tqdm
 
 from deeplabsam.pose.backends.dlc import DLCPoseHead
+from deeplabsam.pose.from_coco import decode_segmentation
 
 
 def parse_args() -> argparse.Namespace:
@@ -114,30 +114,6 @@ def parse_args() -> argparse.Namespace:
         help="Seed for torch/numpy so repeated runs are byte-identical.",
     )
     return p.parse_args()
-
-
-def decode_segmentation(segmentation, height: int, width: int) -> np.ndarray:
-    """COCO ``segmentation`` (polygons, uncompressed RLE, or RLE) -> HxW bool mask.
-
-    ``sam3video_to_coco.py`` emits polygons for simple blobs and compressed RLE for
-    masks with holes/multiple parts, so both shapes turn up in the same file.
-
-    An empty/degenerate polygon list yields an all-False mask rather than raising:
-    supervision occasionally drops the contour of a thin instance on export (e.g.
-    ``open_field`` annotation 4647), leaving a valid bbox with no segmentation. The
-    caller substitutes the bbox for such masks so the instance is still posed.
-    """
-    if isinstance(segmentation, list):  # polygon(s)
-        # A polygon needs >= 3 points; frPyObjects raises IndexError on shorter ones.
-        polygons = [p for p in segmentation if len(p) >= 6]
-        if not polygons:
-            return np.zeros((height, width), dtype=bool)
-        rle = mask_utils.merge(mask_utils.frPyObjects(polygons, height, width))
-    elif isinstance(segmentation["counts"], list):  # uncompressed RLE
-        rle = mask_utils.frPyObjects(segmentation, height, width)
-    else:  # compressed RLE
-        rle = segmentation
-    return mask_utils.decode(rle).astype(bool)
 
 
 def to_coco_keypoints(
