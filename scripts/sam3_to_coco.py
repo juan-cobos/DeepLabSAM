@@ -60,7 +60,7 @@ def iter_frames(
     max_frames: int | None,
     stride: int,
 ) -> tuple[Iterator[tuple[int, str, np.ndarray]], int]:
-    """Yield ``(index, name, rgb_uint8_hwc)`` for every kept frame, plus a tqdm total."""
+    """Yield ``(index, name, rgb_uint8_hwc)`` for every kept frame."""
     if video is not None:
         decoder = VideoDecoder(video, dimension_order="NHWC")
         n = decoder.metadata.num_frames or 0
@@ -158,6 +158,14 @@ def main(
             help="Probability threshold used to binarize the predicted masks.",
         ),
     ] = 0.5,
+    nms_threshold: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=1.0,
+            help="Per-frame mask-IoU NMS threshold for duplicates (applied before --top-k).",
+        ),
+    ] = 0.5,
     max_detections: Annotated[
         int | None,
         typer.Option(
@@ -248,6 +256,7 @@ def main(
             threshold,
             mask_threshold,
         )
+        detections = detections.with_nms(threshold=nms_threshold)
         # Keep only the K highest-scoring instances (e.g. the single animal).
         if max_detections is not None and len(detections) > max_detections:
             keep = np.argsort(detections.confidence)[::-1][:max_detections]
