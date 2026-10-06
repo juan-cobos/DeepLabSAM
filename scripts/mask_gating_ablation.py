@@ -16,7 +16,7 @@ import numpy as np
 import torch
 
 from deeplabsam.pose.backends.dlc import DLCPoseHead
-from deeplabsam.pose.from_coco import decode_segmentation
+from deeplabsam.pose.coco import decode_segmentation
 
 SUPER_ANIMAL = "superanimal_topviewmouse"
 KEYPOINT_THRESHOLD = 0.3
