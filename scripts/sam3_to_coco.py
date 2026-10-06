@@ -1,30 +1,11 @@
-"""Segment a video with SAM 3 (detect + track) and export COCO annotations.
-
-Run through the SAM 3 *image* model, this streams a video through
-``Sam3VideoWrapper`` so objects are tracked across frames. For every frame each
-tracked instance is written to a standard COCO detection/segmentation file
-(``annotations.json``) containing, per instance, a ``bbox``, a ``segmentation``
-(exact RLE for masks with holes/multiple parts, polygon otherwise -- handled by
-``supervision``), an ``area``, the SAM 3 ``score``, and the persistent
-``track_id`` so instances can be followed across frames.
-
-Alongside the annotations it writes:
-  * ``frames/frame_00000.jpg`` -- the raw decoded frames (COCO ``file_name``),
-  * ``viz/frame_00000.png``    -- the same frames with masks/boxes/labels drawn.
-
-Example:
-    python scripts/sam3video_to_coco.py \
-        --video /home/juan/Videos/example_videos/edited/stereotypes.mp4 \
-        --out-dir ./outputs/stereotypes \
-        --prompt mouse --max-frames 300
-
-"""
+"""Segment frames with the SAM 3 model and export COCO annotations."""
 
 from __future__ import annotations
 
 import enum
 import json
 import random
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated
 
@@ -39,9 +20,7 @@ from supervision.dataset.formats.coco import (
 )
 from torchcodec.decoders import VideoDecoder
 from tqdm import tqdm
-from transformers import Sam3VideoConfig
-
-from deeplabsam.segment.sam3video import Sam3VideoWrapper
+from transformers import Sam3Model, Sam3Processor
 
 DTYPES = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}
 
@@ -50,6 +29,9 @@ class DType(enum.StrEnum):
     bf16 = "bf16"
     fp16 = "fp16"
     fp32 = "fp32"
+
+
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
 
 def seed_everything(seed: int) -> None:
@@ -72,15 +54,91 @@ def _json_default(o):
     raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
 
+def iter_frames(
+    video: Path | None,
+    image_dir: Path | None,
+    max_frames: int | None,
+    stride: int,
+) -> tuple[Iterator[tuple[int, str, np.ndarray]], int]:
+    """Yield ``(index, name, rgb_uint8_hwc)`` for every kept frame, plus a tqdm total."""
+    if video is not None:
+        decoder = VideoDecoder(video, dimension_order="NHWC")
+        n = decoder.metadata.num_frames or 0
+        if max_frames is not None:
+            n = min(n, max_frames) if n else max_frames
+        indices = range(0, n, stride)
+
+        def gen():
+            for i in indices:
+                yield i, f"frame_{i:05d}", decoder[i].numpy()
+
+        return gen(), len(indices)
+
+    paths = sorted(p for p in image_dir.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+    paths = paths[:max_frames][::stride]
+
+    def gen():
+        for i, path in enumerate(paths):
+            yield i, path.stem, np.asarray(Image.open(path).convert("RGB"))
+
+    return gen(), len(paths)
+
+
+def segment(
+    model: Sam3Model,
+    processor: Sam3Processor,
+    prompts: list[str],
+    category_ids: dict[str, int],
+    rgb: np.ndarray,
+    threshold: float,
+    mask_threshold: float,
+) -> sv.Detections:
+    """Run every prompt on one image in a single batched forward pass."""
+    inputs = processor(
+        images=[rgb] * len(prompts),
+        text=prompts,
+        return_tensors="pt",
+    ).to(model.device, dtype=model.dtype)
+    with torch.inference_mode():
+        outputs = model(**inputs)
+    results = processor.post_process_instance_segmentation(
+        outputs,
+        threshold=threshold,
+        mask_threshold=mask_threshold,
+        target_sizes=inputs["original_sizes"].tolist(),
+    )
+
+    per_prompt = []
+    for prompt, res in zip(prompts, results):
+        n = len(res["scores"])
+        if n == 0:
+            continue
+        per_prompt.append(
+            sv.Detections(
+                xyxy=res["boxes"].float().cpu().numpy(),
+                mask=res["masks"].bool().cpu().numpy(),
+                confidence=res["scores"].float().cpu().numpy(),
+                # supervision class ids are 0-based; COCO category ids are 1-based.
+                class_id=np.full(n, category_ids[prompt] - 1, dtype=int),
+                data={"class_name": np.full(n, prompt, dtype=object)},
+            ),
+        )
+    return sv.Detections.merge(per_prompt) if per_prompt else sv.Detections.empty()
+
+
 def main(
-    video: Annotated[
-        Path,
-        typer.Option(exists=True, dir_okay=False, readable=True, help="Input video file."),
-    ],
     out_dir: Annotated[
         Path,
         typer.Option(help="Where to write annotations.json, frames/ and viz/."),
     ],
+    video: Annotated[
+        Path | None,
+        typer.Option(exists=True, dir_okay=False, readable=True, help="Input video file."),
+    ] = None,
+    image_dir: Annotated[
+        Path | None,
+        typer.Option(exists=True, file_okay=False, help="Directory of input images."),
+    ] = None,
     prompt: Annotated[
         list[str],
         typer.Option(
@@ -90,44 +148,37 @@ def main(
     ] = ["mouse"],
     threshold: Annotated[
         float,
+        typer.Option(min=0.0, max=1.0, help="Drop instances scoring below this."),
+    ] = 0.5,
+    mask_threshold: Annotated[
+        float,
         typer.Option(
             min=0.0,
             max=1.0,
-            help="Drop instances scoring below this (0 keeps everything the tracker returns).",
+            help="Probability threshold used to binarize the predicted masks.",
         ),
-    ] = 0.0,
+    ] = 0.5,
     max_detections: Annotated[
         int | None,
         typer.Option(
             "--max-detections",
             "--top-k",
             min=1,
-            help="Keep only the K highest-scoring instances per frame "
+            help="Keep only the K highest-scoring instances per frame, across all prompts "
             "(e.g. 1 when exactly one animal is present; lets you lower --threshold safely).",
         ),
     ] = None,
     max_frames: Annotated[
         int | None,
-        typer.Option(min=1, help="Stop after this many decoded frames (debug)."),
+        typer.Option(min=1, help="Stop after this many input frames/images (debug)."),
     ] = None,
     stride: Annotated[
         int,
         typer.Option(
             min=1,
-            help="Keep every Nth frame (still streamed through the tracker in order).",
+            help="Keep every Nth frame/image (skipped frames are never run through the model).",
         ),
     ] = 1,
-    num_maskmem: Annotated[
-        int,
-        typer.Option(help="Memory window for eviction; -1 disables eviction (unbounded VRAM)."),
-    ] = 64,
-    image_size: Annotated[
-        int | None,
-        typer.Option(
-            help="Override the checkpoint's inference resolution (square, px). "
-            "Smaller is faster/less VRAM but less accurate; default keeps the model's native size.",
-        ),
-    ] = None,
     checkpoint_path: Annotated[
         str,
         typer.Option(help="SAM 3 checkpoint (HF id or local path)."),
@@ -144,7 +195,9 @@ def main(
         ),
     ] = 0,
 ) -> None:
-    """Segment a video with SAM 3 (detect + track) and export COCO annotations."""
+    """Segment frames with the SAM 3 image model and export COCO annotations."""
+    if (video is None) == (image_dir is None):
+        raise typer.BadParameter("pass exactly one of --video or --image-dir")
     seed_everything(seed)
     torch.set_float32_matmul_precision("high")
 
@@ -153,53 +206,28 @@ def main(
     if viz:
         viz_dir = out_dir / "viz"
         viz_dir.mkdir(exist_ok=True)
-        mask_annot = sv.MaskAnnotator(color_lookup=sv.ColorLookup.TRACK)
-        box_annot = sv.BoxAnnotator(color_lookup=sv.ColorLookup.TRACK)
-        label_annot = sv.LabelAnnotator(color_lookup=sv.ColorLookup.TRACK)
+        mask_annot = sv.MaskAnnotator(color_lookup=sv.ColorLookup.INDEX)
+        box_annot = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX)
+        label_annot = sv.LabelAnnotator(color_lookup=sv.ColorLookup.INDEX)
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Loading SAM 3 from {checkpoint_path} ...")
-    config = Sam3VideoConfig.from_pretrained(str(checkpoint_path))
-    if image_size is not None:
-        config.image_size = image_size
-    wrapper = Sam3VideoWrapper(
-        text=prompt,
-        checkpoint_path=checkpoint_path,
-        config=config,
-        dtype=DTYPES[dtype.value],
-        num_maskmem=None if num_maskmem < 0 else num_maskmem,
-    )
+    model = Sam3Model.from_pretrained(checkpoint_path, dtype=DTYPES[dtype.value])
+    model = model.to(device).eval()
+    processor = Sam3Processor.from_pretrained(checkpoint_path)
 
-    # Global, stable category ids from the CLI prompts (SegmentResult.to_detections
-    # re-derives class_id per frame from whichever prompts fired, so we remap by
-    # class name to keep category ids consistent across the whole video).
     categories = classes_to_coco_categories(sorted(prompt))
-    name_to_category_id = {c["name"]: c["id"] for c in categories}
+    category_ids = {c["name"]: c["id"] for c in categories}
 
-    decoder = VideoDecoder(video, dimension_order="NHWC", device=wrapper.device)
-    meta = decoder.metadata
-    total = meta.num_frames or 0
-    if max_frames is not None:
-        total = min(total, max_frames) if total else max_frames
-
+    frames, total = iter_frames(video, image_dir, max_frames, stride)
     coco_images: list[dict] = []
     coco_annotations: list[dict] = []
     image_id = 1
     annotation_id = 1
 
-    pbar = tqdm(decoder, total=total, desc="tracking")
-    for frame_idx, frame in enumerate(pbar):
-        if max_frames is not None and frame_idx >= max_frames:
-            break
-
-        # Every frame is streamed through the tracker to preserve memory/continuity,
-        # but only every --stride frame is written out.
-        result = wrapper(frame)
-        if frame_idx % stride != 0:
-            continue
-
-        rgb = frame.detach().cpu().numpy()  # (H, W, 3) uint8 RGB
+    pbar = tqdm(frames, total=total, desc="segmenting")
+    for frame_idx, name, rgb in pbar:
         height, width = rgb.shape[:2]
-        name = f"frame_{frame_idx:05d}"
         Image.fromarray(rgb).save(frames_dir / f"{name}.jpg")
         coco_images.append(
             {
@@ -211,27 +239,23 @@ def main(
             },
         )
 
-        detections = result.to_detections()
-        if threshold > 0 and len(detections):
-            detections = detections[detections.confidence >= threshold]
+        detections = segment(
+            model,
+            processor,
+            prompt,
+            category_ids,
+            rgb,
+            threshold,
+            mask_threshold,
+        )
         # Keep only the K highest-scoring instances (e.g. the single animal).
         if max_detections is not None and len(detections) > max_detections:
             keep = np.argsort(detections.confidence)[::-1][:max_detections]
             detections = detections[keep]
 
         if len(detections):
-            # Remap the per-frame class_id to the global, name-based category id.
-            names = detections.data["class_name"]
-            detections.class_id = np.array(
-                [name_to_category_id[n] - 1 for n in names],
-                dtype=int,
-            )
-            # COCO `area` is the *mask* area. supervision only reads it from
-            # data["area"] (a round-trip hook for already-annotated files) and
-            # otherwise falls back to the bounding-box area, which overstates a
-            # thin/diagonal animal several-fold. Count the mask pixels instead.
-
-            # Patched in develop branchm not in release
+            # COCO `area` is the *mask* area; supervision otherwise falls back to
+            # the bounding-box area (see sam3video_to_coco.py).
             detections.data["area"] = detections.mask.sum(axis=(1, 2)).astype(float)
             anns, annotation_id = detections_to_coco_annotations(
                 detections=detections,
@@ -239,25 +263,16 @@ def main(
                 annotation_id=annotation_id,
                 approximation_percentage=0.0,  # exact masks (RLE/polygon)
             )
-            # anns are in detection order; attach SAM 3 score + persistent track id.
-            for ann, score, tid in zip(
-                anns,
-                detections.confidence,
-                detections.tracker_id,
-            ):
+            for ann, score in zip(anns, detections.confidence):
                 ann["score"] = round(float(score), 5)
-                ann["track_id"] = int(tid)
             coco_annotations.extend(anns)
 
         if viz:
             scene = rgb[..., ::-1].copy()  # RGB -> BGR for the annotators
             if len(detections):
                 labels = [
-                    f"{n} #{t}"
-                    for n, t in zip(
-                        detections.data["class_name"],
-                        detections.tracker_id,
-                    )
+                    f"{n} {s:.2f}"
+                    for n, s in zip(detections.data["class_name"], detections.confidence)
                 ]
                 scene = mask_annot.annotate(scene, detections)
                 scene = box_annot.annotate(scene, detections)
@@ -269,7 +284,7 @@ def main(
 
     coco = {
         "info": {
-            "description": f"SAM 3 video '{' + '.join(prompt)}' auto-annotations",
+            "description": f"SAM 3 image '{' + '.join(prompt)}' auto-annotations",
         },
         "images": coco_images,
         "annotations": coco_annotations,
