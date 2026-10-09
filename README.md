@@ -210,6 +210,24 @@ build the head from a project config + snapshot with
 
 ---
 
+## Citation
+
+If DeepLabSAM helps your research, please cite [the accompanying paper](https://www.biorxiv.org/content/10.64898/2026.10.02.756254v1):
+
+```bibtex
+@article{Cobos2026.10.02.756254,
+  author    = {Cobos, Juan and Thirard, Steeve and Belkaid, Marwen and Naude, Jeremie},
+  title     = {A promptable foundation model enables automated multi-task dataset construction and real-time pose estimation in mice},
+  journal   = {bioRxiv},
+  year      = {2026},
+  publisher = {Cold Spring Harbor Laboratory},
+  doi       = {10.64898/2026.10.02.756254},
+  URL       = {https://www.biorxiv.org/content/10.64898/2026.10.02.756254v1}
+}
+```
+
+---
+
 ## Acknowledgements
 
 DeepLabSAM stands on other projects — please cite/credit them if you use it:
